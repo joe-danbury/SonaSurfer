@@ -1,0 +1,22 @@
+app:
+  name: "SonaSurfer"
+  debug: true
+  cors_origins:
+    - "http://localhost:3000"
+
+agent:
+  target_songs: 30
+  max_search_attempts: 50
+  timeout_seconds: 300
+
+spotify:
+  scopes:
+    - "playlist-modify-public"
+    - "playlist-modify-private"
+    - "user-library-read"
+    - "user-top-read"
+
+claude:
+  model: "claude-sonnet-4-20250514"
+  max_tokens: 4096
+
