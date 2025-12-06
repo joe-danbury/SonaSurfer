@@ -64,8 +64,49 @@ function App() {
         </div>
       </div>
 
-      {/* Right half - Reserved for future use */}
-      <div className="w-1/2 bg-white/10"></div>
+      {/* Right half - Playlist Display */}
+      <div className="w-1/2 bg-white flex flex-col h-screen overflow-y-auto">
+        <div className="p-8">
+          {/* Playlist Cover */}
+          <div className="mb-6 flex justify-center">
+            <div className="w-64 h-64 bg-gray-200 rounded-lg shadow-lg flex items-center justify-center">
+              <svg
+                className="w-24 h-24 text-gray-400"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </div>
+          </div>
+
+          {/* Playlist Name */}
+          <div className="mb-6 text-center">
+            <h2 className="text-3xl font-bold text-gray-800">
+              My Playlist
+            </h2>
+          </div>
+
+          {/* Tracklist */}
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold text-gray-700 mb-4">Tracks</h3>
+            <div className="space-y-1">
+              {/* Placeholder tracks - will be replaced with actual data */}
+              <div className="flex items-center gap-3 p-3 rounded hover:bg-gray-100 transition-colors">
+                <div className="w-10 h-10 bg-gray-300 rounded flex-shrink-0"></div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-gray-400 text-sm">Track name will appear here</p>
+                  <p className="text-gray-500 text-xs">Artist name</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
