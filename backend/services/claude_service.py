@@ -181,7 +181,7 @@ class ClaudeService:
                 api_params["system"] = system
             
             # Loop to handle tool calls
-            max_iterations = 5  # Prevent infinite loops
+            max_iterations = 15  # Prevent infinite loops
             iteration = 0
             
             while iteration < max_iterations:
