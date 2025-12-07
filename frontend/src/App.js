@@ -188,7 +188,7 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#4a9b8e] flex relative">
+    <div className="min-h-screen bg-green-500 flex relative">
       {/* Top Right - Login/Logout Button */}
       <div className="absolute top-4 right-4 z-10">
         {isAuthenticated ? (
@@ -240,7 +240,7 @@ function App() {
                 {!playlist && (
                   <button
                     onClick={handleCreatePlaylist}
-                    className="px-6 py-3 bg-white text-[#4a9b8e] rounded-lg hover:bg-white/90 transition-colors font-semibold"
+                    className="px-6 py-3 bg-white text-green-500 rounded-lg hover:bg-white/90 transition-colors font-semibold"
                   >
                     Create Playlist
                   </button>
@@ -283,7 +283,7 @@ function App() {
             <button
               type="submit"
               disabled={!isAuthenticated}
-              className="px-6 py-3 bg-white text-[#4a9b8e] rounded-lg font-semibold hover:bg-white/90 transition-colors focus:outline-none focus:ring-2 focus:ring-white/50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-6 py-3 bg-white text-green-500 rounded-lg font-semibold hover:bg-white/90 transition-colors focus:outline-none focus:ring-2 focus:ring-white/50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Send
             </button>
@@ -390,7 +390,7 @@ function App() {
               </button>
             </div>
             
-            <form onSubmit={handleFormSubmit} className="space-y-4">
+            <form onSubmit={handleFormSubmit} className="space-y-4" autoComplete="off">
               <div>
                 <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
                   Playlist Name *
@@ -403,7 +403,8 @@ function App() {
                   onChange={handleFormChange}
                   required
                   disabled={isCreating}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4a9b8e] disabled:opacity-50"
+                  autoComplete="off"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
                   placeholder="My Awesome Playlist"
                 />
               </div>
@@ -419,7 +420,8 @@ function App() {
                   onChange={handleFormChange}
                   disabled={isCreating}
                   rows={3}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4a9b8e] disabled:opacity-50"
+                  autoComplete="off"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
                   placeholder="Describe your playlist..."
                 />
               </div>
@@ -432,7 +434,7 @@ function App() {
                   checked={formData.public}
                   onChange={handleFormChange}
                   disabled={isCreating}
-                  className="w-4 h-4 text-[#4a9b8e] border-gray-300 rounded focus:ring-[#4a9b8e] disabled:opacity-50"
+                  className="w-4 h-4 text-green-500 border-gray-300 rounded focus:ring-green-500 disabled:opacity-50"
                 />
                 <label htmlFor="public" className="ml-2 text-sm text-gray-700">
                   Make playlist public
@@ -451,7 +453,7 @@ function App() {
                 <button
                   type="submit"
                   disabled={isCreating || !formData.name.trim()}
-                  className="flex-1 px-4 py-2 bg-[#4a9b8e] text-white rounded-lg hover:bg-[#3d8a7d] transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+                  className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
                 >
                   {isCreating ? 'Creating...' : 'Create'}
                 </button>
