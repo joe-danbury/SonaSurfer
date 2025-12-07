@@ -40,3 +40,17 @@ class PlaylistResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+class ChatMessage(BaseModel):
+    """Single chat message"""
+    role: str  # "user" or "assistant"
+    content: str
+
+class ChatRequest(BaseModel):
+    """Request model for chat endpoint"""
+    messages: list[ChatMessage]
+    system: Optional[str] = None
+
+class ChatResponse(BaseModel):
+    """Response model for chat endpoint"""
+    message: str

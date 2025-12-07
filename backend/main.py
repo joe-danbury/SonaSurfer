@@ -8,7 +8,8 @@ import secrets
 import os
 
 from services.spotify_service import SpotifyService
-from models.schemas import SpotifyAuthResponse, ErrorResponse, CreatePlaylistRequest
+from services.claude_service import ClaudeService
+from models.schemas import SpotifyAuthResponse, ErrorResponse, CreatePlaylistRequest, ChatRequest, ChatResponse
 
 # Load environment variables - explicitly look in backend directory
 env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -30,8 +31,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Spotify service (lazy initialization to avoid errors on startup if .env is missing)
+# Initialize services (lazy initialization to avoid errors on startup if .env is missing)
 spotify_service = None
+claude_service = None
 
 def get_spotify_service():
     """Get or create Spotify service instance"""
@@ -39,6 +41,13 @@ def get_spotify_service():
     if spotify_service is None:
         spotify_service = SpotifyService()
     return spotify_service
+
+def get_claude_service():
+    """Get or create Claude service instance"""
+    global claude_service
+    if claude_service is None:
+        claude_service = ClaudeService()
+    return claude_service
 
 # In-memory state storage (for CSRF protection)
 # In production, use Redis or similar
@@ -155,4 +164,22 @@ async def create_playlist(
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to create playlist: {str(e)}")
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
+    """Send a chat message to Claude and get a response"""
+    try:
+        service = get_claude_service()
+        
+        # Convert Pydantic models to dict format
+        messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
+        
+        # Get response from Claude
+        response_text = service.chat(messages=messages, system=request.system)
+        
+        return ChatResponse(message=response_text)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get response from Claude: {str(e)}")
 
