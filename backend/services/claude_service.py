@@ -4,7 +4,11 @@ from typing import List, Dict, Optional
 import yaml
 import httpx
 import json
+import logging
 from urllib.parse import quote_plus
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 class ClaudeService:
     def __init__(self):
@@ -53,6 +57,7 @@ class ClaudeService:
         Returns:
             Formatted search results as a string
         """
+        logger.info(f"🔍 Web search requested: {query}")
         try:
             # Use DuckDuckGo HTML search (no API key required)
             search_url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
@@ -83,12 +88,15 @@ class ClaudeService:
                         results.append(f"Title: {title}\nURL: {url}")
                 
                 if results:
+                    logger.info(f"✅ Web search completed. Found {len(results)} results for: {query}")
                     return "\n\n".join(results)
                 else:
                     # Fallback: return a message indicating search was performed
+                    logger.warning(f"⚠️ Web search completed but no results parsed for: {query}")
                     return f"Search performed for: {query}\n(Results parsing may need improvement)"
                     
         except Exception as e:
+            logger.error(f"❌ Web search error for query '{query}': {str(e)}")
             return f"Error performing web search: {str(e)}"
     
     def chat(self, messages: List[Dict[str, str]], system: Optional[str] = None) -> str:
@@ -149,6 +157,7 @@ class ClaudeService:
             iteration = 0
             
             while iteration < max_iterations:
+                logger.info(f"📤 Sending request to Claude (iteration {iteration + 1})")
                 response = self.client.messages.create(**api_params)
                 
                 # Check if Claude wants to use a tool
@@ -161,9 +170,22 @@ class ClaudeService:
                     elif block.type == "tool_use":
                         tool_uses.append(block)
                 
+                # Log Claude's response
+                if text_content:
+                    logger.info(f"💬 Claude response: {text_content[:200]}{'...' if len(text_content) > 200 else ''}")
+                
                 # If no tool uses, return the text response
                 if not tool_uses:
+                    logger.info("✅ Claude response complete (no tool calls)")
                     return text_content if text_content else ""
+                
+                # Log tool calls
+                logger.info(f"🔧 Claude requested {len(tool_uses)} tool call(s):")
+                for tool_use in tool_uses:
+                    logger.info(f"   - Tool: {tool_use.name} (ID: {tool_use.id})")
+                    if tool_use.name == "search_web":
+                        query = tool_use.input.get("query", "")
+                        logger.info(f"     Query: {query}")
                 
                 # Execute tools and add results to conversation
                 tool_results = []
@@ -171,6 +193,7 @@ class ClaudeService:
                     if tool_use.name == "search_web":
                         query = tool_use.input.get("query", "")
                         result = self.search_web(query)
+                        logger.info(f"📥 Tool result received (length: {len(result)} chars)")
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": tool_use.id,
@@ -190,11 +213,14 @@ class ClaudeService:
                 })
                 
                 iteration += 1
+                logger.info(f"🔄 Continuing conversation with tool results (iteration {iteration})")
             
             # If we've done max iterations, return the last text content
+            logger.warning(f"⚠️ Maximum tool call iterations ({max_iterations}) reached")
             return text_content if text_content else "Maximum tool call iterations reached."
                 
         except Exception as e:
+            logger.error(f"❌ Error in Claude chat: {str(e)}")
             raise Exception(f"Failed to get response from Claude: {str(e)}")
     
     def stream_chat(self, messages: List[Dict[str, str]], system: Optional[str] = None):

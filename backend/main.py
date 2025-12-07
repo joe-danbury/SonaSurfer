@@ -6,6 +6,15 @@ import yaml
 import time
 import secrets
 import os
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 from services.spotify_service import SpotifyService
 from services.claude_service import ClaudeService
@@ -174,12 +183,19 @@ async def chat(request: ChatRequest):
         # Convert Pydantic models to dict format
         messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
         
+        # Log incoming request
+        last_user_message = next((msg["content"] for msg in reversed(messages) if msg.get("role") == "user"), "N/A")
+        logger.info(f"📨 Incoming chat request: {last_user_message[:100]}{'...' if len(last_user_message) > 100 else ''}")
+        
         # Get response from Claude
         response_text = service.chat(messages=messages, system=request.system)
         
+        logger.info(f"📤 Sending response to client (length: {len(response_text)} chars)")
         return ChatResponse(message=response_text)
     except ValueError as e:
+        logger.error(f"❌ ValueError in chat endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
+        logger.error(f"❌ Exception in chat endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get response from Claude: {str(e)}")
 
