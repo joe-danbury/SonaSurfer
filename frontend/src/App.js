@@ -188,27 +188,31 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#4a9b8e] flex">
+    <div className="min-h-screen bg-[#4a9b8e] flex relative">
+      {/* Top Right - Login/Logout Button */}
+      <div className="absolute top-4 right-4 z-10">
+        {isAuthenticated ? (
+          <button
+            onClick={handleLogout}
+            className="px-4 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 transition-colors text-sm backdrop-blur-sm"
+          >
+            Logout
+          </button>
+        ) : (
+          <button
+            onClick={handleLogin}
+            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-semibold text-sm"
+          >
+            Login with Spotify
+          </button>
+        )}
+      </div>
+
       {/* Left half - Chat Window */}
       <div className={`w-1/2 flex flex-col h-screen ${showPlaylistForm ? 'blur-sm pointer-events-none' : ''}`}>
-        {/* Login Header */}
-        <div className="border-b border-white/20 p-4 flex justify-between items-center">
+        {/* Header */}
+        <div className="border-b border-white/20 p-4">
           <h1 className="text-xl font-bold text-white">SonaSurfer 🎵</h1>
-          {isAuthenticated ? (
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 transition-colors text-sm"
-            >
-              Logout
-            </button>
-          ) : (
-            <button
-              onClick={handleLogin}
-              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-semibold text-sm"
-            >
-              Login with Spotify
-            </button>
-          )}
         </div>
 
         {/* Message History Area */}
@@ -233,12 +237,14 @@ function App() {
                 <p className="text-white/70 text-lg mb-4">
                   Start a conversation to build your playlist...
                 </p>
-                <button
-                  onClick={handleCreatePlaylist}
-                  className="px-6 py-3 bg-white text-[#4a9b8e] rounded-lg hover:bg-white/90 transition-colors font-semibold"
-                >
-                  Create Playlist
-                </button>
+                {!playlist && (
+                  <button
+                    onClick={handleCreatePlaylist}
+                    className="px-6 py-3 bg-white text-[#4a9b8e] rounded-lg hover:bg-white/90 transition-colors font-semibold"
+                  >
+                    Create Playlist
+                  </button>
+                )}
               </div>
             </div>
           ) : (
