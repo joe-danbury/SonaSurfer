@@ -10,8 +10,17 @@ class SpotifyService:
         self.client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
         self.redirect_uri = os.getenv("SPOTIFY_REDIRECT_URI")
         
+        # Validate environment variables
+        if not self.client_id:
+            raise ValueError("SPOTIFY_CLIENT_ID environment variable is not set. Check your .env file.")
+        if not self.client_secret:
+            raise ValueError("SPOTIFY_CLIENT_SECRET environment variable is not set. Check your .env file.")
+        if not self.redirect_uri:
+            raise ValueError("SPOTIFY_REDIRECT_URI environment variable is not set. Check your .env file.")
+        
         # Load scopes from config
-        with open('config.yaml') as f:
+        config_path = os.path.join(os.path.dirname(__file__), '..', 'config.yaml')
+        with open(config_path) as f:
             config = yaml.safe_load(f)
         self.scopes = " ".join(config['spotify']['scopes'])
         
