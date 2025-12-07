@@ -15,6 +15,7 @@ function App() {
     public: true
   });
   const [isCreating, setIsCreating] = useState(false);
+  const [isLoadingResponse, setIsLoadingResponse] = useState(false);
 
   // Check for tokens on mount and handle OAuth callback
   useEffect(() => {
@@ -119,11 +120,58 @@ function App() {
     }
   };
 
-  const handleSendMessage = (e) => {
+  const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (inputValue.trim()) {
-      setMessages([...messages, { text: inputValue, sender: 'user' }]);
-      setInputValue('');
+    if (!inputValue.trim() || isLoadingResponse) {
+      return;
+    }
+
+    const userMessage = inputValue.trim();
+    setInputValue('');
+    
+    // Add user message to chat
+    const newMessages = [...messages, { text: userMessage, sender: 'user' }];
+    setMessages(newMessages);
+    setIsLoadingResponse(true);
+
+    try {
+      // Convert messages to API format (include conversation history)
+      const apiMessages = newMessages
+        .filter(msg => msg.sender === 'user' || msg.sender === 'assistant')
+        .map(msg => ({
+          role: msg.sender === 'user' ? 'user' : 'assistant',
+          content: msg.text
+        }));
+
+      // Call Claude API
+      const response = await fetch(`${API_BASE_URL}/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: apiMessages
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Add Claude's response to messages
+        setMessages([...newMessages, { text: data.message, sender: 'assistant' }]);
+      } else {
+        const errorData = await response.json();
+        setMessages([...newMessages, {
+          text: `Error: ${errorData.detail || 'Failed to get response from Claude'}`,
+          sender: 'system'
+        }]);
+      }
+    } catch (error) {
+      setMessages([...newMessages, {
+        text: `Error: ${error.message}`,
+        sender: 'system'
+      }]);
+    } finally {
+      setIsLoadingResponse(false);
     }
   };
 
@@ -248,24 +296,37 @@ function App() {
               </div>
             </div>
           ) : (
-            messages.map((message, index) => (
-              <div
-                key={index}
-                className={`flex ${message.sender === 'user' ? 'justify-end' : message.sender === 'system' ? 'justify-center' : 'justify-start'}`}
-              >
+            <>
+              {messages.map((message, index) => (
                 <div
-                  className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                    message.sender === 'user'
-                      ? 'bg-white text-gray-800'
-                      : message.sender === 'system'
-                      ? 'bg-red-500/20 text-red-100 border border-red-500/30'
-                      : 'bg-white/20 text-white'
-                  }`}
+                  key={index}
+                  className={`flex ${message.sender === 'user' ? 'justify-end' : message.sender === 'system' ? 'justify-center' : 'justify-start'}`}
                 >
-                  <p>{message.text}</p>
+                  <div
+                    className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                      message.sender === 'user'
+                        ? 'bg-white text-gray-800'
+                        : message.sender === 'system'
+                        ? 'bg-red-500/20 text-red-100 border border-red-500/30'
+                        : 'bg-white/20 text-white'
+                    }`}
+                  >
+                    <p className="whitespace-pre-wrap">{message.text}</p>
+                  </div>
                 </div>
-              </div>
-            ))
+              ))}
+              {isLoadingResponse && (
+                <div className="flex justify-start">
+                  <div className="bg-white/20 text-white rounded-lg px-4 py-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-white rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                      <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -277,15 +338,15 @@ function App() {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               placeholder={isAuthenticated ? "Ask me to create a playlist..." : "Please login first..."}
-              disabled={!isAuthenticated}
+              disabled={!isAuthenticated || isLoadingResponse}
               className="flex-1 px-4 py-3 rounded-lg bg-white/90 text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-white/50 disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <button
               type="submit"
-              disabled={!isAuthenticated}
+              disabled={!isAuthenticated || isLoadingResponse || !inputValue.trim()}
               className="px-6 py-3 bg-white text-green-500 rounded-lg font-semibold hover:bg-white/90 transition-colors focus:outline-none focus:ring-2 focus:ring-white/50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Send
+              {isLoadingResponse ? 'Sending...' : 'Send'}
             </button>
           </form>
         </div>
