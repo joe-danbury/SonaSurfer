@@ -229,9 +229,17 @@ function App() {
             </div>
           ) : messages.length === 0 ? (
             <div className="flex items-center justify-center h-full">
-              <p className="text-white/70 text-lg">
-                Start a conversation to build your playlist...
-              </p>
+              <div className="text-center">
+                <p className="text-white/70 text-lg mb-4">
+                  Start a conversation to build your playlist...
+                </p>
+                <button
+                  onClick={handleCreatePlaylist}
+                  className="px-6 py-3 bg-white text-[#4a9b8e] rounded-lg hover:bg-white/90 transition-colors font-semibold"
+                >
+                  Create Playlist
+                </button>
+              </div>
             </div>
           ) : (
             messages.map((message, index) => (
@@ -344,21 +352,11 @@ function App() {
 
           {/* Right side - Playlist Name and Description */}
           <div className="flex-1 flex flex-col">
-            {/* Playlist Name and Create Button */}
-            <div className="mb-4 flex justify-between items-start">
-              <div className="flex-1">
-                <h2 className="text-3xl font-bold text-gray-800">
-                  {playlist?.name || 'My Playlist'}
-                </h2>
-              </div>
-              {isAuthenticated && (
-                <button
-                  onClick={handleCreatePlaylist}
-                  className="ml-4 px-4 py-2 bg-[#4a9b8e] text-white rounded-lg hover:bg-[#3d8a7d] transition-colors font-semibold text-sm whitespace-nowrap"
-                >
-                  Create Playlist
-                </button>
-              )}
+            {/* Playlist Name */}
+            <div className="mb-4">
+              <h2 className="text-3xl font-bold text-gray-800">
+                {playlist?.name || 'My Playlist'}
+              </h2>
             </div>
 
             {/* Description */}
