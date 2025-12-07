@@ -1,2 +1,58 @@
-# Spotify service - to be implemented
+import os
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
+from typing import Optional, Dict
+import yaml
 
+class SpotifyService:
+    def __init__(self):
+        self.client_id = os.getenv("SPOTIFY_CLIENT_ID")
+        self.client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+        self.redirect_uri = os.getenv("SPOTIFY_REDIRECT_URI")
+        
+        # Load scopes from config
+        with open('config.yaml') as f:
+            config = yaml.safe_load(f)
+        self.scopes = " ".join(config['spotify']['scopes'])
+        
+        # Initialize SpotifyOAuth helper
+        self.oauth = SpotifyOAuth(
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+            redirect_uri=self.redirect_uri,
+            scope=self.scopes,
+            show_dialog=True
+        )
+    
+    def get_auth_url(self, state: Optional[str] = None) -> str:
+        """Generate Spotify authorization URL"""
+        auth_url = self.oauth.get_authorize_url(state=state)
+        return auth_url
+    
+    def exchange_code_for_token(self, code: str) -> Dict:
+        """Exchange authorization code for access/refresh tokens"""
+        try:
+            # Use spotipy's method to exchange code
+            token_info = self.oauth.get_access_token(code, as_dict=True)
+            return token_info
+        except Exception as e:
+            raise Exception(f"Failed to exchange code for token: {str(e)}")
+    
+    def get_spotify_client(self, access_token: str):
+        """Create Spotipy client with user's access token"""
+        return spotipy.Spotify(auth=access_token)
+    
+    def refresh_access_token(self, refresh_token: str) -> Dict:
+        """Refresh expired access token using refresh token"""
+        try:
+            # Create a new OAuth instance for refresh
+            oauth = SpotifyOAuth(
+                client_id=self.client_id,
+                client_secret=self.client_secret,
+                redirect_uri=self.redirect_uri,
+                scope=self.scopes
+            )
+            token_info = oauth.refresh_access_token(refresh_token)
+            return token_info
+        except Exception as e:
+            raise Exception(f"Failed to refresh token: {str(e)}")
