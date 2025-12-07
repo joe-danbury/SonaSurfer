@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
@@ -8,7 +8,7 @@ import secrets
 import os
 
 from services.spotify_service import SpotifyService
-from models.schemas import SpotifyAuthResponse, ErrorResponse
+from models.schemas import SpotifyAuthResponse, ErrorResponse, CreatePlaylistRequest
 
 # Load environment variables - explicitly look in backend directory
 env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -127,4 +127,32 @@ async def refresh_token(refresh_token: str = Query(..., description="Refresh tok
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to refresh token: {str(e)}")
+
+@app.post("/playlists")
+async def create_playlist(
+    request: CreatePlaylistRequest,
+    authorization: str = Header(..., description="Bearer token with access_token")
+):
+    """Create a new playlist for the authenticated user"""
+    try:
+        # Extract access token from Authorization header
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Invalid authorization header. Expected 'Bearer <token>'")
+        
+        access_token = authorization.replace("Bearer ", "")
+        
+        # Create playlist
+        service = get_spotify_service()
+        playlist = service.create_playlist(
+            access_token=access_token,
+            name=request.name,
+            description=request.description,
+            public=request.public
+        )
+        
+        return playlist
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to create playlist: {str(e)}")
 

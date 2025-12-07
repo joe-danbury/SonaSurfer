@@ -65,3 +65,24 @@ class SpotifyService:
             return token_info
         except Exception as e:
             raise Exception(f"Failed to refresh token: {str(e)}")
+    
+    def create_playlist(self, access_token: str, name: str, description: Optional[str] = None, public: bool = True) -> Dict:
+        """Create a new playlist for the authenticated user"""
+        try:
+            spotify = self.get_spotify_client(access_token)
+            
+            # Get current user's ID
+            user = spotify.current_user()
+            user_id = user['id']
+            
+            # Create playlist
+            playlist = spotify.user_playlist_create(
+                user=user_id,
+                name=name,
+                public=public,
+                description=description
+            )
+            
+            return playlist
+        except Exception as e:
+            raise Exception(f"Failed to create playlist: {str(e)}")
