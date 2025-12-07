@@ -7,6 +7,14 @@ function App() {
   const [inputValue, setInputValue] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [accessToken, setAccessToken] = useState(null);
+  const [showPlaylistForm, setShowPlaylistForm] = useState(false);
+  const [playlist, setPlaylist] = useState(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    public: true
+  });
+  const [isCreating, setIsCreating] = useState(false);
 
   // Check for tokens on mount and handle OAuth callback
   useEffect(() => {
@@ -119,10 +127,70 @@ function App() {
     }
   };
 
+  const handleCreatePlaylist = () => {
+    setShowPlaylistForm(true);
+  };
+
+  const handleCloseForm = () => {
+    setShowPlaylistForm(false);
+    setFormData({ name: '', description: '', public: true });
+  };
+
+  const handleFormChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  const handleFormSubmit = async (e) => {
+    e.preventDefault();
+    if (!formData.name.trim()) {
+      return;
+    }
+
+    setIsCreating(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/playlists`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          description: formData.description || null,
+          public: formData.public
+        })
+      });
+
+      if (response.ok) {
+        const playlistData = await response.json();
+        setPlaylist(playlistData);
+        setShowPlaylistForm(false);
+        setFormData({ name: '', description: '', public: true });
+      } else {
+        const errorData = await response.json();
+        setMessages([...messages, {
+          text: `Failed to create playlist: ${errorData.detail || 'Unknown error'}`,
+          sender: 'system'
+        }]);
+      }
+    } catch (error) {
+      setMessages([...messages, {
+        text: `Error creating playlist: ${error.message}`,
+        sender: 'system'
+      }]);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#4a9b8e] flex">
       {/* Left half - Chat Window */}
-      <div className="w-1/2 flex flex-col h-screen">
+      <div className={`w-1/2 flex flex-col h-screen ${showPlaylistForm ? 'blur-sm pointer-events-none' : ''}`}>
         {/* Login Header */}
         <div className="border-b border-white/20 p-4 flex justify-between items-center">
           <h1 className="text-xl font-bold text-white">SonaSurfer 🎵</h1>
@@ -216,55 +284,178 @@ function App() {
           <div className="flex-shrink-0 flex flex-col">
             {/* Playlist Cover */}
             <div className="mb-6 flex justify-center">
-              <div className="w-64 h-64 bg-gray-200 rounded-lg shadow-lg flex items-center justify-center">
-                <svg
-                  className="w-24 h-24 text-gray-400"
-                  fill="currentColor"
-                  viewBox="0 0 20 20"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </div>
+              {playlist?.images?.[0]?.url ? (
+                <img 
+                  src={playlist.images[0].url} 
+                  alt={playlist.name}
+                  className="w-64 h-64 rounded-lg shadow-lg object-cover"
+                />
+              ) : (
+                <div className="w-64 h-64 bg-gray-200 rounded-lg shadow-lg flex items-center justify-center">
+                  <svg
+                    className="w-24 h-24 text-gray-400"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
+              )}
             </div>
 
             {/* Tracklist */}
             <div className="space-y-2">
               <h3 className="text-lg font-semibold text-gray-700 mb-4">Tracks</h3>
               <div className="space-y-1">
-                {/* Placeholder tracks - will be replaced with actual data */}
-                <div className="flex items-center gap-3 p-3 rounded hover:bg-gray-100 transition-colors">
-                  <div className="w-10 h-10 bg-gray-300 rounded flex-shrink-0"></div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-gray-400 text-sm">Track name will appear here</p>
-                    <p className="text-gray-500 text-xs">Artist name</p>
+                {playlist?.tracks?.items && playlist.tracks.items.length > 0 ? (
+                  playlist.tracks.items.map((item, index) => (
+                    <div key={index} className="flex items-center gap-3 p-3 rounded hover:bg-gray-100 transition-colors">
+                      {item.track?.album?.images?.[2]?.url ? (
+                        <img 
+                          src={item.track.album.images[2].url} 
+                          alt={item.track.name}
+                          className="w-10 h-10 rounded flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 bg-gray-300 rounded flex-shrink-0"></div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-gray-800 text-sm font-medium">{item.track.name}</p>
+                        <p className="text-gray-500 text-xs">{item.track.artists.map(a => a.name).join(', ')}</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex items-center gap-3 p-3 rounded hover:bg-gray-100 transition-colors">
+                    <div className="w-10 h-10 bg-gray-300 rounded flex-shrink-0"></div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-gray-400 text-sm">No tracks yet</p>
+                      <p className="text-gray-500 text-xs">Tracks will appear here</p>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
 
           {/* Right side - Playlist Name and Description */}
           <div className="flex-1 flex flex-col">
-            {/* Playlist Name */}
-            <div className="mb-4">
-              <h2 className="text-3xl font-bold text-gray-800">
-                My Playlist
-              </h2>
+            {/* Playlist Name and Create Button */}
+            <div className="mb-4 flex justify-between items-start">
+              <div className="flex-1">
+                <h2 className="text-3xl font-bold text-gray-800">
+                  {playlist?.name || 'My Playlist'}
+                </h2>
+              </div>
+              {isAuthenticated && (
+                <button
+                  onClick={handleCreatePlaylist}
+                  className="ml-4 px-4 py-2 bg-[#4a9b8e] text-white rounded-lg hover:bg-[#3d8a7d] transition-colors font-semibold text-sm whitespace-nowrap"
+                >
+                  Create Playlist
+                </button>
+              )}
             </div>
 
             {/* Description */}
             <div className="mb-6">
               <p className="text-gray-500 text-sm">
-                Playlist description will appear here...
+                {playlist?.description || 'Playlist description will appear here...'}
               </p>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Playlist Creation Form Modal */}
+      {showPlaylistForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-md mx-4">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">Create New Playlist</h2>
+              <button
+                onClick={handleCloseForm}
+                className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+                disabled={isCreating}
+              >
+                ×
+              </button>
+            </div>
+            
+            <form onSubmit={handleFormSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
+                  Playlist Name *
+                </label>
+                <input
+                  type="text"
+                  id="name"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleFormChange}
+                  required
+                  disabled={isCreating}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4a9b8e] disabled:opacity-50"
+                  placeholder="My Awesome Playlist"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
+                  Description
+                </label>
+                <textarea
+                  id="description"
+                  name="description"
+                  value={formData.description}
+                  onChange={handleFormChange}
+                  disabled={isCreating}
+                  rows={3}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4a9b8e] disabled:opacity-50"
+                  placeholder="Describe your playlist..."
+                />
+              </div>
+
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="public"
+                  name="public"
+                  checked={formData.public}
+                  onChange={handleFormChange}
+                  disabled={isCreating}
+                  className="w-4 h-4 text-[#4a9b8e] border-gray-300 rounded focus:ring-[#4a9b8e] disabled:opacity-50"
+                />
+                <label htmlFor="public" className="ml-2 text-sm text-gray-700">
+                  Make playlist public
+                </label>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseForm}
+                  disabled={isCreating}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreating || !formData.name.trim()}
+                  className="flex-1 px-4 py-2 bg-[#4a9b8e] text-white rounded-lg hover:bg-[#3d8a7d] transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+                >
+                  {isCreating ? 'Creating...' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
