@@ -70,29 +70,57 @@ class ClaudeService:
                 response = client.get(search_url)
                 response.raise_for_status()
                 
-                # Parse HTML to extract results (simplified)
-                # For a production app, you'd want to use BeautifulSoup or similar
                 html = response.text
-                
-                # Simple extraction - look for result links
                 results = []
-                # DuckDuckGo results are in <a class="result__a"> tags
                 import re
-                result_pattern = r'<a class="result__a"[^>]*href="([^"]*)"[^>]*>([^<]+)</a>'
-                matches = re.findall(result_pattern, html, re.IGNORECASE)
                 
-                for url, title in matches[:5]:  # Get top 5 results
-                    # Clean up the title
+                # Try multiple patterns to find DuckDuckGo results
+                # Pattern 1: Modern DuckDuckGo HTML structure
+                pattern1 = r'<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]*)"[^>]*>([^<]+)</a>'
+                matches1 = re.findall(pattern1, html, re.IGNORECASE)
+                
+                # Pattern 2: Alternative structure with data-testid or other attributes
+                pattern2 = r'<a[^>]*href="([^"]*)"[^>]*class="[^"]*result[^"]*"[^>]*>.*?<span[^>]*>([^<]+)</span>'
+                matches2 = re.findall(pattern2, html, re.IGNORECASE | re.DOTALL)
+                
+                # Pattern 3: Look for links in result containers
+                pattern3 = r'<div[^>]*class="[^"]*result[^"]*"[^>]*>.*?<a[^>]*href="([^"]*)"[^>]*>([^<]+)</a>'
+                matches3 = re.findall(pattern3, html, re.IGNORECASE | re.DOTALL)
+                
+                # Combine all matches
+                all_matches = matches1 + matches2 + matches3
+                
+                # Extract unique results
+                seen_urls = set()
+                for url, title in all_matches:
+                    # Clean up URL (DuckDuckGo sometimes has encoded URLs)
+                    if url.startswith('//'):
+                        url = 'https:' + url
+                    elif url.startswith('/l/?kh='):
+                        # DuckDuckGo redirect URL, try to extract actual URL
+                        url_match = re.search(r'uddg=([^&]+)', url)
+                        if url_match:
+                            from urllib.parse import unquote
+                            url = unquote(url_match.group(1))
+                    
+                    # Clean up title
                     title = re.sub(r'<[^>]+>', '', title).strip()
-                    if title and url:
+                    title = re.sub(r'\s+', ' ', title)  # Normalize whitespace
+                    
+                    # Skip if we've seen this URL or if it's invalid
+                    if url and title and url not in seen_urls and url.startswith('http'):
+                        seen_urls.add(url)
                         results.append(f"Title: {title}\nURL: {url}")
+                        if len(results) >= 5:  # Limit to top 5
+                            break
                 
                 if results:
                     logger.info(f"✅ Web search completed. Found {len(results)} results for: {query}")
                     return "\n\n".join(results)
                 else:
-                    # Fallback: return a message indicating search was performed
+                    # Log the HTML structure for debugging (first 500 chars)
                     logger.warning(f"⚠️ Web search completed but no results parsed for: {query}")
+                    logger.debug(f"HTML preview (first 500 chars): {html[:500]}")
                     return f"Search performed for: {query}\n(Results parsing may need improvement)"
                     
         except Exception as e:
