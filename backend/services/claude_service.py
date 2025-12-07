@@ -46,12 +46,16 @@ class ClaudeService:
                     })
             
             # Make the API call
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                messages=api_messages,
-                system=system
-            )
+            # Only include system parameter if it's provided
+            api_params = {
+                "model": self.model,
+                "max_tokens": self.max_tokens,
+                "messages": api_messages
+            }
+            if system:
+                api_params["system"] = system
+            
+            response = self.client.messages.create(**api_params)
             
             # Extract text from response
             # Anthropic returns content as a list of content blocks
@@ -83,12 +87,16 @@ class ClaudeService:
                         "content": msg['content']
                     })
             
-            with self.client.messages.stream(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                messages=api_messages,
-                system=system
-            ) as stream:
+            # Only include system parameter if it's provided
+            api_params = {
+                "model": self.model,
+                "max_tokens": self.max_tokens,
+                "messages": api_messages
+            }
+            if system:
+                api_params["system"] = system
+            
+            with self.client.messages.stream(**api_params) as stream:
                 for text_block in stream.text_stream:
                     yield text_block
                     
