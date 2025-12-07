@@ -2,6 +2,9 @@ import os
 from anthropic import Anthropic
 from typing import List, Dict, Optional
 import yaml
+import httpx
+import json
+from urllib.parse import quote_plus
 
 class ClaudeService:
     def __init__(self):
@@ -21,10 +24,77 @@ class ClaudeService:
         
         self.model = config['claude']['model']
         self.max_tokens = config['claude']['max_tokens']
+        
+        # Define available tools
+        self.tools = [
+            {
+                "name": "search_web",
+                "description": "Search the web for current information, news, facts, or any topic. Use this when you need up-to-date information that you don't have in your training data.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query to look up on the web"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        ]
+    
+    def search_web(self, query: str) -> str:
+        """
+        Search the web using DuckDuckGo and return results.
+        
+        Args:
+            query: Search query string
+        
+        Returns:
+            Formatted search results as a string
+        """
+        try:
+            # Use DuckDuckGo HTML search (no API key required)
+            search_url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            }
+            
+            with httpx.Client(timeout=10.0, headers=headers) as client:
+                response = client.get(search_url)
+                response.raise_for_status()
+                
+                # Parse HTML to extract results (simplified)
+                # For a production app, you'd want to use BeautifulSoup or similar
+                html = response.text
+                
+                # Simple extraction - look for result links
+                results = []
+                # DuckDuckGo results are in <a class="result__a"> tags
+                import re
+                result_pattern = r'<a class="result__a"[^>]*href="([^"]*)"[^>]*>([^<]+)</a>'
+                matches = re.findall(result_pattern, html, re.IGNORECASE)
+                
+                for url, title in matches[:5]:  # Get top 5 results
+                    # Clean up the title
+                    title = re.sub(r'<[^>]+>', '', title).strip()
+                    if title and url:
+                        results.append(f"Title: {title}\nURL: {url}")
+                
+                if results:
+                    return "\n\n".join(results)
+                else:
+                    # Fallback: return a message indicating search was performed
+                    return f"Search performed for: {query}\n(Results parsing may need improvement)"
+                    
+        except Exception as e:
+            return f"Error performing web search: {str(e)}"
     
     def chat(self, messages: List[Dict[str, str]], system: Optional[str] = None) -> str:
         """
         Send a chat message to Claude and get a response.
+        Handles tool calls automatically.
         
         Args:
             messages: List of message dicts with 'role' and 'content' keys
@@ -36,33 +106,93 @@ class ClaudeService:
         """
         try:
             # Prepare the message list for Anthropic API
-            # Anthropic expects messages in a specific format
             api_messages = []
             for msg in messages:
-                if msg.get('role') == 'user' or msg.get('role') == 'assistant':
+                role = msg.get('role')
+                if role == 'user' or role == 'assistant':
+                    # Handle both string content and tool use content
+                    content = msg.get('content', '')
+                    if isinstance(content, str):
+                        api_messages.append({
+                            "role": role,
+                            "content": content
+                        })
+                    else:
+                        # If content is already in API format (with tool_use blocks)
+                        api_messages.append({
+                            "role": role,
+                            "content": content
+                        })
+                elif role == 'tool':
+                    # Tool result message
                     api_messages.append({
-                        "role": msg['role'],
-                        "content": msg['content']
+                        "role": "user",
+                        "content": [{
+                            "type": "tool_result",
+                            "tool_use_id": msg.get('tool_use_id'),
+                            "content": msg.get('content', '')
+                        }]
                     })
             
-            # Make the API call
-            # Only include system parameter if it's provided
+            # Make the API call with tools
             api_params = {
                 "model": self.model,
                 "max_tokens": self.max_tokens,
-                "messages": api_messages
+                "messages": api_messages,
+                "tools": self.tools
             }
             if system:
                 api_params["system"] = system
             
-            response = self.client.messages.create(**api_params)
+            # Loop to handle tool calls
+            max_iterations = 5  # Prevent infinite loops
+            iteration = 0
             
-            # Extract text from response
-            # Anthropic returns content as a list of content blocks
-            if response.content and len(response.content) > 0:
-                return response.content[0].text
-            else:
-                return ""
+            while iteration < max_iterations:
+                response = self.client.messages.create(**api_params)
+                
+                # Check if Claude wants to use a tool
+                tool_uses = []
+                text_content = ""
+                
+                for block in response.content:
+                    if block.type == "text":
+                        text_content += block.text
+                    elif block.type == "tool_use":
+                        tool_uses.append(block)
+                
+                # If no tool uses, return the text response
+                if not tool_uses:
+                    return text_content if text_content else ""
+                
+                # Execute tools and add results to conversation
+                tool_results = []
+                for tool_use in tool_uses:
+                    if tool_use.name == "search_web":
+                        query = tool_use.input.get("query", "")
+                        result = self.search_web(query)
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tool_use.id,
+                            "content": result
+                        })
+                
+                # Add assistant's message with tool use to conversation
+                api_messages.append({
+                    "role": "assistant",
+                    "content": response.content
+                })
+                
+                # Add tool results to conversation
+                api_messages.append({
+                    "role": "user",
+                    "content": tool_results
+                })
+                
+                iteration += 1
+            
+            # If we've done max iterations, return the last text content
+            return text_content if text_content else "Maximum tool call iterations reached."
                 
         except Exception as e:
             raise Exception(f"Failed to get response from Claude: {str(e)}")
