@@ -339,6 +339,7 @@ function App() {
               onChange={(e) => setInputValue(e.target.value)}
               placeholder={isAuthenticated ? "Ask me to create a playlist..." : "Please login first..."}
               disabled={!isAuthenticated || isLoadingResponse}
+              autoComplete="off"
               className="flex-1 px-4 py-3 rounded-lg bg-white/90 text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-white/50 disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <button
