@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 from services.spotify_service import SpotifyService
 from services.claude_service import ClaudeService
+from services.extraction_service import ExtractionService
 from models.schemas import SpotifyAuthResponse, ErrorResponse, CreatePlaylistRequest, ChatRequest, ChatResponse
 
 # Load environment variables - explicitly look in backend directory
@@ -43,6 +44,7 @@ app.add_middleware(
 # Initialize services (lazy initialization to avoid errors on startup if .env is missing)
 spotify_service = None
 claude_service = None
+extraction_service = None
 
 def get_spotify_service():
     """Get or create Spotify service instance"""
@@ -57,6 +59,13 @@ def get_claude_service():
     if claude_service is None:
         claude_service = ClaudeService()
     return claude_service
+
+def get_extraction_service():
+    """Get or create Extraction service instance"""
+    global extraction_service
+    if extraction_service is None:
+        extraction_service = ExtractionService()
+    return extraction_service
 
 # In-memory state storage (for CSRF protection)
 # In production, use Redis or similar
