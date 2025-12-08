@@ -183,6 +183,7 @@ class ClaudeService:
             # Loop to handle tool calls
             max_iterations = 15  # Prevent infinite loops
             iteration = 0
+            accumulated_text = ""  # Accumulate all text responses across iterations
             
             while iteration < max_iterations:
                 logger.info(f"📤 Sending request to Claude (iteration {iteration + 1})")
@@ -198,14 +199,15 @@ class ClaudeService:
                     elif block.type == "tool_use":
                         tool_uses.append(block)
                 
-                # Log Claude's response
+                # Accumulate text from this iteration
                 if text_content:
+                    accumulated_text += text_content
                     logger.info(f"💬 Claude response: {text_content[:200]}{'...' if len(text_content) > 200 else ''}")
                 
-                # If no tool uses, return the text response
+                # If no tool uses, return the accumulated text response
                 if not tool_uses:
                     logger.info("✅ Claude response complete (no tool calls)")
-                    return text_content if text_content else ""
+                    return accumulated_text if accumulated_text else ""
                 
                 # Log tool calls
                 logger.info(f"🔧 Claude requested {len(tool_uses)} tool call(s):")
@@ -243,9 +245,9 @@ class ClaudeService:
                 iteration += 1
                 logger.info(f"🔄 Continuing conversation with tool results (iteration {iteration})")
             
-            # If we've done max iterations, return the last text content
+            # If we've done max iterations, return the accumulated text content
             logger.warning(f"⚠️ Maximum tool call iterations ({max_iterations}) reached")
-            return text_content if text_content else "Maximum tool call iterations reached."
+            return accumulated_text if accumulated_text else "Maximum tool call iterations reached."
                 
         except Exception as e:
             logger.error(f"❌ Error in Claude chat: {str(e)}")
