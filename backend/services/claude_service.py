@@ -44,6 +44,21 @@ class ClaudeService:
                     },
                     "required": ["query"]
                 }
+            },
+            {
+                "name": "set_mode",
+                "description": "Set the conversation mode based on user intent. Use 'build' when the user wants to create, build, or add songs to a playlist. Use 'chat' for general conversation, questions about music/artists, or discussions that don't involve playlist creation.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "mode": {
+                            "type": "string",
+                            "enum": ["build", "chat"],
+                            "description": "The conversation mode: 'build' for playlist building/adding songs, 'chat' for general conversation"
+                        }
+                    },
+                    "required": ["mode"]
+                }
             }
         ]
     
@@ -136,6 +151,7 @@ class ClaudeService:
             messages: List of message dicts with 'role' and 'content' keys
                      Example: [{"role": "user", "content": "Hello!"}]
             system: Optional system message to set Claude's behavior
+            on_songs_extracted: Optional callback for when songs are extracted (only called in 'build' mode)
         
         Returns:
             Claude's response text
@@ -170,20 +186,29 @@ class ClaudeService:
                         }]
                     })
             
+            # Build system prompt - guide Claude to use set_mode tool
+            default_system = """You are a helpful music assistant for SonaSurfer, a playlist creation app.
+
+IMPORTANT: At the start of each conversation turn, determine the user's intent:
+- If they want to CREATE, BUILD, or ADD SONGS to a playlist → call set_mode with mode="build"
+- If they're just chatting, asking questions, or discussing music → call set_mode with mode="chat"
+
+Only extract and recommend songs when in "build" mode. In "chat" mode, just have a conversation."""
+            
             # Make the API call with tools
             api_params = {
                 "model": self.model,
                 "max_tokens": self.max_tokens,
                 "messages": api_messages,
-                "tools": self.tools
+                "tools": self.tools,
+                "system": default_system if not system else f"{default_system}\n\n{system}"
             }
-            if system:
-                api_params["system"] = system
             
             # Loop to handle tool calls
             max_iterations = 15  # Prevent infinite loops
             iteration = 0
             accumulated_text = ""  # Accumulate all text responses across iterations
+            current_mode = "chat"  # Default mode, Claude will set this via set_mode tool
             
             while iteration < max_iterations:
                 logger.info(f"📤 Sending request to Claude (iteration {iteration + 1})")
@@ -199,22 +224,31 @@ class ClaudeService:
                     elif block.type == "tool_use":
                         tool_uses.append(block)
                 
+                # Process set_mode tool calls FIRST to update mode before extraction check
+                set_mode_calls = [tu for tu in tool_uses if tu.name == "set_mode"]
+                for tool_use in set_mode_calls:
+                    mode = tool_use.input.get("mode", "chat")
+                    current_mode = mode  # Update mode state immediately
+                    logger.info(f"🎯 Mode set to: {mode}")
+                
                 # Accumulate text from this iteration
                 if text_content:
                     accumulated_text += text_content
                     logger.info(f"💬 Claude response: {text_content[:200]}{'...' if len(text_content) > 200 else ''}")
                     
-                    # Extract songs from this response immediately (not at the end)
-                    if on_songs_extracted:
+                    # Extract songs from this response ONLY if in 'build' mode
+                    if on_songs_extracted and current_mode == "build":
                         try:
                             from services.extraction_service import ExtractionService
                             extraction_service = ExtractionService()
                             songs = extraction_service.extract_songs(text_content)
                             if songs:
-                                logger.info(f"🎵 Extracted {len(songs)} song(s) from Claude response")
+                                logger.info(f"🎵 Extracted {len(songs)} song(s) from Claude response (build mode)")
                                 on_songs_extracted(songs)
                         except Exception as e:
                             logger.warning(f"⚠️ Failed to extract songs: {str(e)}")
+                    elif current_mode == "chat":
+                        logger.info("💬 Chat mode - skipping song extraction")
                 
                 # If no tool uses, return the accumulated text response
                 if not tool_uses:
@@ -228,6 +262,9 @@ class ClaudeService:
                     if tool_use.name == "search_web":
                         query = tool_use.input.get("query", "")
                         logger.info(f"     Query: {query}")
+                    elif tool_use.name == "set_mode":
+                        mode = tool_use.input.get("mode", "")
+                        logger.info(f"     Mode: {mode}")
                 
                 # Execute tools and add results to conversation
                 tool_results = []
@@ -240,6 +277,15 @@ class ClaudeService:
                             "type": "tool_result",
                             "tool_use_id": tool_use.id,
                             "content": result
+                        })
+                    elif tool_use.name == "set_mode":
+                        mode = tool_use.input.get("mode", "chat")
+                        # Mode already updated above, just return confirmation
+                        logger.info(f"🎯 Confirming mode: {mode}")
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tool_use.id,
+                            "content": f"Mode set to {mode}"
                         })
                 
                 # Add assistant's message with tool use to conversation
