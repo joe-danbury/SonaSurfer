@@ -1,6 +1,6 @@
 import os
 from anthropic import Anthropic
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Callable
 import yaml
 import httpx
 import json
@@ -127,7 +127,7 @@ class ClaudeService:
             logger.error(f"❌ Web search error for query '{query}': {str(e)}")
             return f"Error performing web search: {str(e)}"
     
-    def chat(self, messages: List[Dict[str, str]], system: Optional[str] = None) -> str:
+    def chat(self, messages: List[Dict[str, str]], system: Optional[str] = None, on_songs_extracted: Optional[Callable[[List[Dict[str, str]]], None]] = None) -> str:
         """
         Send a chat message to Claude and get a response.
         Handles tool calls automatically.
@@ -203,6 +203,18 @@ class ClaudeService:
                 if text_content:
                     accumulated_text += text_content
                     logger.info(f"💬 Claude response: {text_content[:200]}{'...' if len(text_content) > 200 else ''}")
+                    
+                    # Extract songs from this response immediately (not at the end)
+                    if on_songs_extracted:
+                        try:
+                            from services.extraction_service import ExtractionService
+                            extraction_service = ExtractionService()
+                            songs = extraction_service.extract_songs(text_content)
+                            if songs:
+                                logger.info(f"🎵 Extracted {len(songs)} song(s) from Claude response")
+                                on_songs_extracted(songs)
+                        except Exception as e:
+                            logger.warning(f"⚠️ Failed to extract songs: {str(e)}")
                 
                 # If no tool uses, return the accumulated text response
                 if not tool_uses:

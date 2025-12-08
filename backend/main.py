@@ -20,6 +20,7 @@ from services.spotify_service import SpotifyService
 from services.claude_service import ClaudeService
 from services.extraction_service import ExtractionService
 from models.schemas import SpotifyAuthResponse, ErrorResponse, CreatePlaylistRequest, ChatRequest, ChatResponse
+from typing import List, Dict
 
 # Load environment variables - explicitly look in backend directory
 env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -196,10 +197,23 @@ async def chat(request: ChatRequest):
         last_user_message = next((msg["content"] for msg in reversed(messages) if msg.get("role") == "user"), "N/A")
         logger.info(f"📨 Incoming chat request: {last_user_message[:100]}{'...' if len(last_user_message) > 100 else ''}")
         
-        # Get response from Claude
-        response_text = service.chat(messages=messages, system=request.system)
+        # Store extracted songs from the conversation
+        extracted_songs = []
+        
+        # Callback function to handle extracted songs
+        def on_songs_extracted(songs: List[Dict[str, str]]):
+            """Callback when songs are extracted from Claude's response"""
+            extracted_songs.extend(songs)
+            logger.info(f"🎵 Songs extracted so far: {len(extracted_songs)} total")
+        
+        # Get response from Claude (with extraction callback)
+        response_text = service.chat(messages=messages, system=request.system, on_songs_extracted=on_songs_extracted)
         
         logger.info(f"📤 Sending response to client (length: {len(response_text)} chars)")
+        logger.info(f"🎵 Total songs extracted during conversation: {len(extracted_songs)}")
+        
+        # TODO: Store extracted_songs or use them to add to playlist
+        
         return ChatResponse(message=response_text)
     except ValueError as e:
         logger.error(f"❌ ValueError in chat endpoint: {str(e)}")
