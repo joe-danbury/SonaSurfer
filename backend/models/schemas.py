@@ -54,3 +54,12 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     """Response model for chat endpoint"""
     message: str
+
+class AddTracksRequest(BaseModel):
+    """Request model for adding tracks to playlist"""
+    track_uris: list[str]
+
+class SearchTrackRequest(BaseModel):
+    """Request model for searching tracks"""
+    track: str
+    artist: str

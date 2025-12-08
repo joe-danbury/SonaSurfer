@@ -1,8 +1,11 @@
 import os
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import yaml
+import logging
+
+logger = logging.getLogger(__name__)
 
 class SpotifyService:
     def __init__(self):
@@ -86,3 +89,99 @@ class SpotifyService:
             return playlist
         except Exception as e:
             raise Exception(f"Failed to create playlist: {str(e)}")
+    
+    def search_track(self, access_token: str, track_name: str, artist_name: Optional[str] = None) -> Optional[str]:
+        """
+        Search for a track on Spotify and return its URI.
+        
+        Args:
+            access_token: User's Spotify access token
+            track_name: Name of the track
+            artist_name: Optional artist name to improve search accuracy
+        
+        Returns:
+            Track URI (spotify:track:xxx) if found, None otherwise
+        """
+        try:
+            spotify = self.get_spotify_client(access_token)
+            
+            # Build search query
+            if artist_name:
+                query = f"track:{track_name} artist:{artist_name}"
+            else:
+                query = track_name
+            
+            logger.info(f"🔍 Searching Spotify for: {query}")
+            
+            # Search for track
+            results = spotify.search(q=query, type='track', limit=1)
+            
+            if results['tracks']['items']:
+                track = results['tracks']['items'][0]
+                track_uri = track['uri']
+                logger.info(f"✅ Found track: {track['name']} by {track['artists'][0]['name']} - URI: {track_uri}")
+                return track_uri
+            else:
+                logger.warning(f"⚠️ No track found for: {query}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Error searching for track '{track_name}': {str(e)}")
+            return None
+    
+    def get_playlist(self, access_token: str, playlist_id: str) -> Dict:
+        """
+        Get playlist details including tracks.
+        
+        Args:
+            access_token: User's Spotify access token
+            playlist_id: Spotify playlist ID
+        
+        Returns:
+            Playlist dictionary with tracks
+        """
+        try:
+            spotify = self.get_spotify_client(access_token)
+            playlist = spotify.playlist(playlist_id)
+            return playlist
+        except Exception as e:
+            raise Exception(f"Failed to get playlist: {str(e)}")
+    
+    def add_tracks_to_playlist(self, access_token: str, playlist_id: str, track_uris: List[str]) -> Dict:
+        """
+        Add tracks to a playlist.
+        
+        Args:
+            access_token: User's Spotify access token
+            playlist_id: Spotify playlist ID
+            track_uris: List of track URIs (spotify:track:xxx)
+        
+        Returns:
+            Dictionary with snapshot_id from Spotify
+        """
+        try:
+            spotify = self.get_spotify_client(access_token)
+            
+            # Filter out None values (tracks that weren't found)
+            valid_uris = [uri for uri in track_uris if uri is not None]
+            
+            if not valid_uris:
+                logger.warning("⚠️ No valid track URIs to add")
+                return {"snapshot_id": None, "added": 0}
+            
+            logger.info(f"➕ Adding {len(valid_uris)} track(s) to playlist {playlist_id}")
+            
+            # Add tracks to playlist (Spotify allows up to 100 at a time)
+            # Split into batches of 100 if needed
+            added_count = 0
+            for i in range(0, len(valid_uris), 100):
+                batch = valid_uris[i:i+100]
+                result = spotify.playlist_add_items(playlist_id=playlist_id, items=batch)
+                added_count += len(batch)
+                logger.info(f"✅ Added batch of {len(batch)} tracks. Snapshot ID: {result.get('snapshot_id')}")
+            
+            return {"snapshot_id": result.get('snapshot_id'), "added": added_count}
+            
+        except Exception as e:
+            logger.error(f"❌ Error adding tracks to playlist: {str(e)}")
+            raise Exception(f"Failed to add tracks to playlist: {str(e)}")

@@ -143,12 +143,25 @@ function App() {
           content: msg.text
         }));
 
+      // Build request URL with playlist_id if available
+      // TODO: Move playlist_id management to backend later
+      let chatUrl = `${API_BASE_URL}/chat`;
+      if (playlist?.id) {
+        chatUrl += `?playlist_id=${playlist.id}`;
+      }
+
+      // Build headers
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (accessToken && playlist?.id) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+
       // Call Claude API
-      const response = await fetch(`${API_BASE_URL}/chat`, {
+      const response = await fetch(chatUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: headers,
         body: JSON.stringify({
           messages: apiMessages
         })
@@ -158,6 +171,24 @@ function App() {
         const data = await response.json();
         // Add Claude's response to messages
         setMessages([...newMessages, { text: data.message, sender: 'assistant' }]);
+        
+        // Refresh playlist if tracks were added
+        // TODO: Move playlist refresh to backend/WebSocket for real-time updates
+        if (playlist?.id && accessToken) {
+          try {
+            const playlistResponse = await fetch(`${API_BASE_URL}/playlists/${playlist.id}`, {
+              headers: {
+                'Authorization': `Bearer ${accessToken}`
+              }
+            });
+            if (playlistResponse.ok) {
+              const playlistData = await playlistResponse.json();
+              setPlaylist(playlistData);
+            }
+          } catch (error) {
+            console.error('Failed to refresh playlist:', error);
+          }
+        }
       } else {
         const errorData = await response.json();
         setMessages([...newMessages, {

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query, Header
+from fastapi import FastAPI, HTTPException, Query, Header, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 from services.spotify_service import SpotifyService
 from services.claude_service import ClaudeService
 from services.extraction_service import ExtractionService
-from models.schemas import SpotifyAuthResponse, ErrorResponse, CreatePlaylistRequest, ChatRequest, ChatResponse
+from models.schemas import SpotifyAuthResponse, ErrorResponse, CreatePlaylistRequest, ChatRequest, ChatResponse, AddTracksRequest
 from typing import List, Dict
 
 # Load environment variables - explicitly look in backend directory
@@ -185,7 +185,11 @@ async def create_playlist(
         raise HTTPException(status_code=400, detail=f"Failed to create playlist: {str(e)}")
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(
+    request: ChatRequest,
+    playlist_id: str = Query(None, description="Optional playlist ID to automatically add extracted tracks"),
+    authorization: str = Header(default=None, description="Optional Bearer token for adding tracks to playlist")
+):
     """Send a chat message to Claude and get a response"""
     try:
         service = get_claude_service()
@@ -200,11 +204,44 @@ async def chat(request: ChatRequest):
         # Store extracted songs from the conversation
         extracted_songs = []
         
+        # Get access token if playlist_id is provided
+        access_token = None
+        if playlist_id and authorization:
+            if authorization.startswith("Bearer "):
+                access_token = authorization.replace("Bearer ", "")
+            else:
+                access_token = authorization
+        
         # Callback function to handle extracted songs
         def on_songs_extracted(songs: List[Dict[str, str]]):
             """Callback when songs are extracted from Claude's response"""
             extracted_songs.extend(songs)
             logger.info(f"🎵 Songs extracted so far: {len(extracted_songs)} total")
+            
+            # Automatically search and add tracks to playlist if playlist_id and access_token are provided
+            if playlist_id and access_token and songs:
+                try:
+                    spotify_service = get_spotify_service()
+                    track_uris = []
+                    
+                    for song in songs:
+                        track_uri = spotify_service.search_track(
+                            access_token=access_token,
+                            track_name=song.get("track", ""),
+                            artist_name=song.get("artist")
+                        )
+                        if track_uri:
+                            track_uris.append(track_uri)
+                    
+                    if track_uris:
+                        spotify_service.add_tracks_to_playlist(
+                            access_token=access_token,
+                            playlist_id=playlist_id,
+                            track_uris=track_uris
+                        )
+                        logger.info(f"✅ Added {len(track_uris)} track(s) to playlist {playlist_id}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to add tracks to playlist: {str(e)}")
         
         # Get response from Claude (with extraction callback)
         response_text = service.chat(messages=messages, system=request.system, on_songs_extracted=on_songs_extracted)
@@ -212,9 +249,98 @@ async def chat(request: ChatRequest):
         logger.info(f"📤 Sending response to client (length: {len(response_text)} chars)")
         logger.info(f"🎵 Total songs extracted during conversation: {len(extracted_songs)}")
         
-        # TODO: Store extracted_songs or use them to add to playlist
-        
         return ChatResponse(message=response_text)
+    except ValueError as e:
+        logger.error(f"❌ ValueError in chat endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"❌ Exception in chat endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get response from Claude: {str(e)}")
+
+@app.get("/playlists/{playlist_id}")
+async def get_playlist(
+    playlist_id: str,
+    authorization: str = Header(..., description="Bearer token with access_token")
+):
+    """Get playlist details including tracks"""
+    try:
+        # Extract access token from Authorization header
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Invalid authorization header. Expected 'Bearer <token>'")
+        
+        access_token = authorization.replace("Bearer ", "")
+        
+        # Get playlist
+        spotify_service = get_spotify_service()
+        playlist = spotify_service.get_playlist(
+            access_token=access_token,
+            playlist_id=playlist_id
+        )
+        
+        return playlist
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to get playlist: {str(e)}")
+
+@app.post("/playlists/{playlist_id}/tracks")
+async def add_tracks_to_playlist(
+    playlist_id: str,
+    request: AddTracksRequest,
+    authorization: str = Header(..., description="Bearer token with access_token")
+):
+    """Add tracks to a playlist by their URIs"""
+    try:
+        # Extract access token from Authorization header
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Invalid authorization header. Expected 'Bearer <token>'")
+        
+        access_token = authorization.replace("Bearer ", "")
+        
+        # Add tracks to playlist
+        spotify_service = get_spotify_service()
+        result = spotify_service.add_tracks_to_playlist(
+            access_token=access_token,
+            playlist_id=playlist_id,
+            track_uris=request.track_uris
+        )
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to add tracks to playlist: {str(e)}")
+
+@app.post("/tracks/search")
+async def search_track(
+    track: str = Query(..., description="Track name"),
+    artist: str = Query(None, description="Artist name"),
+    authorization: str = Header(..., description="Bearer token with access_token")
+):
+    """Search for a track on Spotify and return its URI"""
+    try:
+        # Extract access token from Authorization header
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Invalid authorization header. Expected 'Bearer <token>'")
+        
+        access_token = authorization.replace("Bearer ", "")
+        
+        # Search for track
+        spotify_service = get_spotify_service()
+        track_uri = spotify_service.search_track(
+            access_token=access_token,
+            track_name=track,
+            artist_name=artist
+        )
+        
+        if track_uri:
+            return {"uri": track_uri, "found": True}
+        else:
+            return {"uri": None, "found": False}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to search for track: {str(e)}")
     except ValueError as e:
         logger.error(f"❌ ValueError in chat endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
