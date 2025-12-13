@@ -75,8 +75,6 @@ Text to parse:
             if response.content and len(response.content) > 0:
                 extracted_text = response.content[0].text.strip()
             
-            logger.info(f"📝 Extracted text from Claude: {extracted_text[:200]}{'...' if len(extracted_text) > 200 else ''}")
-            
             # Strip markdown code fences if present (```json ... ``` or ``` ... ```)
             extracted_text = re.sub(r'^```(?:json)?\s*\n', '', extracted_text, flags=re.MULTILINE)
             extracted_text = re.sub(r'\n```\s*$', '', extracted_text, flags=re.MULTILINE)
@@ -102,6 +100,8 @@ Text to parse:
                     else:
                         logger.warning(f"⚠️ Invalid song format: {song}")
                 
+                # Log the full list of extracted songs
+                logger.info(f"📝 Extracted text from Claude: {json.dumps(valid_songs, indent=2)}")
                 logger.info(f"✅ Successfully extracted {len(valid_songs)} song(s)")
                 return valid_songs
                 
