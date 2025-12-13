@@ -159,8 +159,10 @@ function App() {
       }
 
       // Add placeholder assistant message that we'll update incrementally
-      const assistantMessageIndex = newMessages.length;
-      setMessages([...newMessages, { text: '', sender: 'assistant' }]);
+      // Use a unique ID to track this specific response
+      const responseId = Date.now() + Math.random();
+      const initialMessages = [...newMessages, { text: '', sender: 'assistant', responseId }];
+      setMessages(initialMessages);
 
       // Call Claude API with streaming
       const response = await fetch(chatUrl, {
@@ -200,16 +202,27 @@ function App() {
                 
                 if (data.type === 'chunk') {
                   accumulatedText += data.content;
-                  // Update the assistant message incrementally
+                  // Update the assistant message incrementally by finding it via responseId
                   setMessages(prev => {
                     const updated = [...prev];
-                    updated[assistantMessageIndex] = { text: accumulatedText, sender: 'assistant' };
+                    const messageIndex = updated.findIndex(msg => msg.responseId === responseId);
+                    if (messageIndex !== -1) {
+                      updated[messageIndex] = { ...updated[messageIndex], text: accumulatedText };
+                    } else {
+                      // Fallback: if message not found, append new one (shouldn't happen)
+                      updated.push({ text: accumulatedText, sender: 'assistant', responseId });
+                    }
                     return updated;
                   });
                 } else if (data.type === 'error') {
                   setMessages(prev => {
                     const updated = [...prev];
-                    updated[assistantMessageIndex] = { text: `Error: ${data.content}`, sender: 'system' };
+                    const messageIndex = updated.findIndex(msg => msg.responseId === responseId);
+                    if (messageIndex !== -1) {
+                      updated[messageIndex] = { text: `Error: ${data.content}`, sender: 'system', responseId };
+                    } else {
+                      updated.push({ text: `Error: ${data.content}`, sender: 'system', responseId });
+                    }
                     return updated;
                   });
                   setIsLoadingResponse(false);
@@ -247,18 +260,42 @@ function App() {
         const errorData = await response.json();
         setMessages(prev => {
           const updated = [...prev];
-          updated[assistantMessageIndex] = {
-            text: `Error: ${errorData.detail || 'Failed to get response from Claude'}`,
-            sender: 'system'
-          };
+          const messageIndex = updated.findIndex(msg => msg.responseId === responseId);
+          if (messageIndex !== -1) {
+            updated[messageIndex] = {
+              text: `Error: ${errorData.detail || 'Failed to get response from Claude'}`,
+              sender: 'system',
+              responseId
+            };
+          } else {
+            updated.push({
+              text: `Error: ${errorData.detail || 'Failed to get response from Claude'}`,
+              sender: 'system',
+              responseId
+            });
+          }
           return updated;
         });
       }
     } catch (error) {
-      setMessages([...newMessages, {
-        text: `Error: ${error.message}`,
-        sender: 'system'
-      }]);
+      // If we have a responseId, update that message, otherwise add new error message
+      setMessages(prev => {
+        const updated = [...prev];
+        const messageIndex = updated.findIndex(msg => msg.responseId === responseId);
+        if (messageIndex !== -1) {
+          updated[messageIndex] = {
+            text: `Error: ${error.message}`,
+            sender: 'system',
+            responseId
+          };
+        } else {
+          updated.push({
+            text: `Error: ${error.message}`,
+            sender: 'system'
+          });
+        }
+        return updated;
+      });
     } finally {
       setIsLoadingResponse(false);
     }
@@ -388,7 +425,7 @@ function App() {
             <>
               {messages.map((message, index) => (
                 <div
-                  key={index}
+                  key={message.responseId || `msg-${index}-${message.sender}`}
                   className={`flex ${message.sender === 'user' ? 'justify-end' : message.sender === 'system' ? 'justify-center' : 'justify-start'}`}
                 >
                   <div
