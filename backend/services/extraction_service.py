@@ -25,46 +25,9 @@ class ExtractionService:
         # System prompt for JSON extraction
         self.system_prompt = "You are a JSON extraction assistant. Extract song recommendations and return ONLY valid JSON array, nothing else."
     
-    def _extract_single_song_with_regex(self, text: str) -> Optional[Dict[str, str]]:
-        """
-        Try to extract a single song using regex patterns.
-        Looks for patterns like: "Track Title" — Artist or Track Title — Artist
-        
-        Returns:
-            Dict with 'track' and 'artist' keys if found, None otherwise
-        """
-        # Pattern 1: "Track Title" — Artist (with em dash or double dash)
-        pattern1 = r'["\']([^"\']+)["\']\s*[—–-]\s*([^\n,]+)'
-        match1 = re.search(pattern1, text)
-        if match1:
-            track = match1.group(1).strip()
-            artist = match1.group(2).strip().rstrip('.,;:')
-            if track and artist:
-                return {"track": track, "artist": artist}
-        
-        # Pattern 2: Numbered list: "1. Track Title" — Artist
-        pattern2 = r'\d+\.\s*["\']?([^"\']+)["\']?\s*[—–-]\s*([^\n,]+)'
-        match2 = re.search(pattern2, text)
-        if match2:
-            track = match2.group(1).strip()
-            artist = match2.group(2).strip().rstrip('.,;:')
-            if track and artist:
-                return {"track": track, "artist": artist}
-        
-        # Pattern 3: "Track Title" by Artist
-        pattern3 = r'["\']([^"\']+)["\']\s+by\s+([^\n,]+)'
-        match3 = re.search(pattern3, text, re.IGNORECASE)
-        if match3:
-            track = match3.group(1).strip()
-            artist = match3.group(2).strip().rstrip('.,;:')
-            if track and artist:
-                return {"track": track, "artist": artist}
-        
-        return None
-    
     def extract_new_songs_incremental(self, text: str, already_extracted: Set[Tuple[str, str]]) -> List[Dict[str, str]]:
         """
-        Extract songs one-by-one from text, only returning new songs not already extracted.
+        Extract songs from text using Claude extraction, only returning new songs not already extracted.
         
         Args:
             text: Text to extract songs from
@@ -73,18 +36,11 @@ class ExtractionService:
         Returns:
             List of new song dictionaries
         """
-        new_songs = []
-        
-        # Try regex extraction first (faster)
-        song = self._extract_single_song_with_regex(text)
-        if song:
-            track_key = (song["track"].lower().strip(), song["artist"].lower().strip())
-            if track_key not in already_extracted:
-                new_songs.append(song)
-                return new_songs
-        
-        # Fallback: Use Claude extraction for the entire text, but filter out already extracted
+        # Use Claude extraction to get all songs from text
         all_songs = self.extract_songs(text)
+        
+        # Filter out songs that were already extracted
+        new_songs = []
         for song in all_songs:
             track_key = (song["track"].lower().strip(), song["artist"].lower().strip())
             if track_key not in already_extracted:
