@@ -258,6 +258,20 @@ function App() {
                   });
                   setIsLoadingResponse(false);
                   return;
+                } else if (data.type === 'track_added') {
+                  // A track was successfully added to the playlist - refresh to show it
+                  console.log('🎵 Track added:', data.track);
+                  if (playlist?.id && accessToken) {
+                    // Refresh playlist to show the new track
+                    fetch(`${API_BASE_URL}/playlists/${playlist.id}`, {
+                      headers: { 'Authorization': `Bearer ${accessToken}` }
+                    })
+                      .then(res => res.ok ? res.json() : null)
+                      .then(playlistData => {
+                        if (playlistData) setPlaylist(playlistData);
+                      })
+                      .catch(err => console.error('Failed to refresh playlist:', err));
+                  }
                 } else if (data.type === 'done') {
                   // Stream complete - reset processing phase and mark last bubble as final (visible)
                   setProcessingPhase('idle');
