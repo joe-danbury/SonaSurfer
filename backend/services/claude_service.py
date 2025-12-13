@@ -166,11 +166,15 @@ class ClaudeService:
             # Build system prompt - guide Claude to use set_mode tool
             default_system = """You are a helpful music assistant for SonaSurfer, a playlist creation app.
 
-IMPORTANT: At the start of each conversation turn, determine the user's intent:
-- If they want to CREATE, BUILD, or ADD SONGS to a playlist → call set_mode with mode="build"
-- If they're just chatting, asking questions, or discussing music → call set_mode with mode="chat"
+CRITICAL: At the START of EVERY conversation turn, the mode is UNDEFINED. You MUST call the set_mode tool FIRST before doing anything else. This is mandatory.
 
-Only extract and recommend songs when in "build" mode. In "chat" mode, just have a conversation."""
+Determine the user's intent and call set_mode immediately:
+- If they want to CREATE, BUILD, ADD SONGS, CONTINUE BUILDING, or EXTEND a playlist → call set_mode with mode="build"
+- If they're just chatting, asking questions, or discussing music without playlist intent → call set_mode with mode="chat"
+
+IMPORTANT: When a user says things like "keep building", "add more", "continue", "extend the playlist", or provides song suggestions, they want to BUILD the playlist → use mode="build".
+
+Only extract and recommend songs when in "build" mode. In "chat" mode, just have a conversation. If mode is undefined, you cannot extract songs."""
             
             # Make the API call with tools
             api_params = {
@@ -185,7 +189,7 @@ Only extract and recommend songs when in "build" mode. In "chat" mode, just have
             max_iterations = 15  # Prevent infinite loops
             iteration = 0
             accumulated_text = ""  # Accumulate all text responses across iterations
-            current_mode = "chat"  # Default mode, Claude will set this via set_mode tool
+            current_mode = "undefined"  # Start as undefined - Claude MUST call set_mode to set the mode
             
             while iteration < max_iterations:
                 logger.info(f"📤 Sending request to Claude (iteration {iteration + 1})")
@@ -226,6 +230,8 @@ Only extract and recommend songs when in "build" mode. In "chat" mode, just have
                             logger.warning(f"⚠️ Failed to extract songs: {str(e)}")
                     elif current_mode == "chat":
                         logger.info("💬 Chat mode - skipping song extraction")
+                    elif current_mode == "undefined":
+                        logger.info("⚠️ Mode undefined - skipping song extraction (Claude must call set_mode first)")
                 
                 # If no tool uses, return the accumulated text response
                 if not tool_uses:
