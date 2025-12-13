@@ -207,6 +207,7 @@ async def chat(
             extracted_songs = []
             failed_songs = []  # Track songs that failed Spotify validation
             already_extracted_songs = set()  # Track (track, artist) tuples to avoid duplicates
+            successfully_added_songs = []  # Track songs that were successfully added to playlist
             
             # Get access token if playlist_id is provided
             access_token = None
@@ -244,6 +245,11 @@ async def chat(
                                 track_uris=[track_uri]
                             )
                             logger.info(f"✅ Added track to playlist: {song.get('track')} by {song.get('artist')}")
+                            # Mark as already extracted so we don't extract it again
+                            track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
+                            already_extracted_songs.add(track_key)
+                            # Add to successfully added songs list for feedback to Claude
+                            successfully_added_songs.append(song)
                         else:
                             # Track validation failed - add to failed list
                             failed_songs.append(song)
@@ -266,7 +272,8 @@ async def chat(
                 messages=messages, 
                 system=request.system, 
                 on_songs_extracted=on_songs_extracted,
-                already_extracted_songs=already_extracted_songs
+                already_extracted_songs=already_extracted_songs,
+                successfully_added_songs=successfully_added_songs
             ):
                 # Handle different chunk types from chat_stream
                 if isinstance(chunk, dict):
@@ -309,7 +316,8 @@ IMPORTANT: Use search_web to find verified alternative tracks that match the sam
                     messages=follow_up_messages,
                     system=request.system,
                     on_songs_extracted=on_songs_extracted,
-                    already_extracted_songs=already_extracted_songs
+                    already_extracted_songs=already_extracted_songs,
+                    successfully_added_songs=successfully_added_songs
                 ):
                     # Handle different chunk types from chat_stream
                     if isinstance(chunk, dict):

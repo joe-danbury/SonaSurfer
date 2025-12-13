@@ -157,7 +157,7 @@ class ClaudeService:
             logger.warning(f"⚠️ Failed to fetch content from {url}: {str(e)}")
             return None
     
-    def chat_stream(self, messages: List[Dict[str, str]], system: Optional[str] = None, on_songs_extracted: Optional[Callable[[List[Dict[str, str]]], None]] = None, already_extracted_songs: Optional[Set[Tuple[str, str]]] = None):
+    def chat_stream(self, messages: List[Dict[str, str]], system: Optional[str] = None, on_songs_extracted: Optional[Callable[[List[Dict[str, str]]], None]] = None, already_extracted_songs: Optional[Set[Tuple[str, str]]] = None, successfully_added_songs: Optional[List[Dict[str, str]]] = None):
         """
         Stream a chat message to Claude and get responses incrementally.
         Handles tool calls automatically.
@@ -167,6 +167,7 @@ class ClaudeService:
                      Example: [{"role": "user", "content": "Hello!"}]
             system: Optional system message to set Claude's behavior
             on_songs_extracted: Optional callback for when songs are extracted (only called in 'build' mode)
+            successfully_added_songs: List of songs that were successfully added to playlist (for feedback)
         
         Yields:
             Text chunks as they arrive from Claude
@@ -236,7 +237,8 @@ WORKFLOW:
 3. Only suggest tracks that appear on the official Wikipedia discography page
 4. Use search_web to verify any other tracks that match the user's request
 5. Only after web search confirms real tracks exist, suggest them in the required format
-6. If web search fails or finds nothing, inform the user honestly - do NOT invent tracks."""
+6. If web search fails or finds nothing, inform the user honestly - do NOT invent tracks
+7. IMPORTANT: Once you have suggested tracks in your response, do NOT mention them again or try to verify them again. Move on to suggesting new tracks or conclude your response. Do not repeat the same track suggestions."""
             
             # Make the API call with tools
             api_params = {
@@ -257,7 +259,36 @@ WORKFLOW:
             if already_extracted_songs is None:
                 already_extracted_songs = set()
             
+            # Track successfully added songs for feedback
+            if successfully_added_songs is None:
+                successfully_added_songs = []
+            
+            # Track last count of successfully added songs to detect new additions
+            last_added_count = len(successfully_added_songs)
+            
             while iteration < max_iterations:
+                # Check if new songs were added since last iteration and inject feedback
+                current_added_count = len(successfully_added_songs)
+                if current_added_count > last_added_count:
+                    # New songs were added - inject feedback message
+                    new_songs = successfully_added_songs[last_added_count:]
+                    songs_list = "\n".join([f"- \"{song['track']}\" by {song['artist']}" for song in new_songs])
+                    feedback_message = f"""The following tracks have been successfully added to the playlist:
+
+{songs_list}
+
+Current playlist now contains {current_added_count} track(s). You can continue adding more tracks if needed, or conclude your response if the playlist is complete."""
+                    
+                    api_messages.append({
+                        "role": "user",
+                        "content": feedback_message
+                    })
+                    logger.info(f"📝 Injected feedback: {current_added_count - last_added_count} new track(s) added to playlist")
+                    last_added_count = current_added_count
+                
+                # Check if we should stop early - if we have successfully added songs and Claude isn't requesting tools
+                # We'll check this after getting the response
+                
                 logger.info(f"📤 Sending request to Claude (iteration {iteration + 1})")
                 response = self.client.messages.create(**api_params)
                 
@@ -308,7 +339,18 @@ WORKFLOW:
                 # If no tool uses, we're done
                 if not tool_uses:
                     logger.info("✅ Claude response complete (no tool calls)")
+                    # If we have successfully added songs, we can stop
+                    if successfully_added_songs and len(successfully_added_songs) > 0:
+                        logger.info(f"🎵 Stopping early - {len(successfully_added_songs)} track(s) successfully added to playlist")
                     return
+                
+                # If we have successfully added songs and Claude is requesting more tools,
+                # check if we should stop early to avoid unnecessary work
+                # Only stop if we have a reasonable number of songs (e.g., 3+) and Claude is just verifying
+                if successfully_added_songs and len(successfully_added_songs) >= 3:
+                    # Check if Claude is just doing verification searches (not finding new songs)
+                    # We'll let it continue for now but Claude will see the feedback about what's already added
+                    pass
                 
                 # Log tool calls
                 logger.info(f"🔧 Claude requested {len(tool_uses)} tool call(s):")
@@ -363,7 +405,7 @@ WORKFLOW:
             logger.error(f"❌ Error in Claude chat: {str(e)}")
             yield {"type": "error", "content": str(e)}
     
-    def chat(self, messages: List[Dict[str, str]], system: Optional[str] = None, on_songs_extracted: Optional[Callable[[List[Dict[str, str]]], None]] = None, already_extracted_songs: Optional[Set[Tuple[str, str]]] = None) -> str:
+    def chat(self, messages: List[Dict[str, str]], system: Optional[str] = None, on_songs_extracted: Optional[Callable[[List[Dict[str, str]]], None]] = None, already_extracted_songs: Optional[Set[Tuple[str, str]]] = None, successfully_added_songs: Optional[List[Dict[str, str]]] = None) -> str:
         """
         Send a chat message to Claude and get a response (non-streaming version).
         Handles tool calls automatically.
@@ -373,13 +415,14 @@ WORKFLOW:
                      Example: [{"role": "user", "content": "Hello!"}]
             system: Optional system message to set Claude's behavior
             on_songs_extracted: Optional callback for when songs are extracted (only called in 'build' mode)
+            successfully_added_songs: List of songs that were successfully added to playlist (for feedback)
         
         Returns:
             Claude's response text (accumulated from all chunks)
         """
         # Use the streaming version and accumulate results
         accumulated = ""
-        for chunk in self.chat_stream(messages, system, on_songs_extracted, already_extracted_songs):
+        for chunk in self.chat_stream(messages, system, on_songs_extracted, already_extracted_songs, successfully_added_songs):
             if isinstance(chunk, dict) and chunk.get("type") == "text":
                 accumulated += chunk.get("content", "")
             elif isinstance(chunk, str):
