@@ -294,7 +294,7 @@ async def chat(
 
 {failed_tracks_text}
 
-IMPORTANT: You MUST first call set_mode with mode="build" before doing anything else. Then use search_web to find verified alternative tracks that match the same musical style/genre, and suggest them in the playlist format."""
+IMPORTANT: Use search_web to find verified alternative tracks that match the same musical style/genre, and suggest them in the playlist format."""
                 
                 # Make follow-up call
                 follow_up_messages = messages + [

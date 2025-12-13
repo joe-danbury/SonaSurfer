@@ -44,21 +44,6 @@ class ClaudeService:
                     },
                     "required": ["query"]
                 }
-            },
-            {
-                "name": "set_mode",
-                "description": "Set the conversation mode based on user intent. Use 'build' when the user wants to create, build, or add songs to a playlist. Use 'chat' for general conversation, questions about music/artists, or discussions that don't involve playlist creation.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "mode": {
-                            "type": "string",
-                            "enum": ["build", "chat"],
-                            "description": "The conversation mode: 'build' for playlist building/adding songs, 'chat' for general conversation"
-                        }
-                    },
-                    "required": ["mode"]
-                }
             }
         ]
     
@@ -163,18 +148,8 @@ class ClaudeService:
                         }]
                     })
             
-            # Build system prompt - guide Claude to use set_mode tool
-            default_system = """You are a helpful music assistant for SonaSurfer, a playlist creation app.
-
-CRITICAL: At the START of EVERY conversation turn, the mode is UNDEFINED. You MUST call the set_mode tool FIRST before doing anything else. This is mandatory.
-
-Determine the user's intent and call set_mode immediately:
-- If they want to CREATE, BUILD, ADD SONGS, CONTINUE BUILDING, or EXTEND a playlist → call set_mode with mode="build"
-- If they're just chatting, asking questions, or discussing music without playlist intent → call set_mode with mode="chat"
-
-IMPORTANT: When a user says things like "keep building", "add more", "continue", "extend the playlist", or provides song suggestions, they want to BUILD the playlist → use mode="build".
-
-Only extract and recommend songs when in "build" mode. In "chat" mode, just have a conversation. If mode is undefined, you cannot extract songs.
+            # Build system prompt - always in build mode
+            default_system = """You are a helpful music assistant for SonaSurfer, a playlist creation app. You are always in BUILD MODE, which means you should help users create and build playlists by suggesting songs.
 
 BUILD MODE RULES (STRICTLY ENFORCED):
 
@@ -194,11 +169,10 @@ OUTPUT FORMAT RULES:
   "Track Title" — Artist
   (No extra punctuation inside the title unless it's part of the official name.)
 
-WORKFLOW FOR BUILD MODE:
-1. Set mode to "build"
-2. Use search_web to research and verify tracks that match the user's request
-3. Only after web search confirms real tracks exist, suggest them in the required format
-4. If web search fails or finds nothing, inform the user honestly - do NOT invent tracks."""
+WORKFLOW:
+1. Use search_web to research and verify tracks that match the user's request
+2. Only after web search confirms real tracks exist, suggest them in the required format
+3. If web search fails or finds nothing, inform the user honestly - do NOT invent tracks."""
             
             # Make the API call with tools
             api_params = {
@@ -213,7 +187,7 @@ WORKFLOW FOR BUILD MODE:
             max_iterations = 15  # Prevent infinite loops
             iteration = 0
             accumulated_text = ""  # Accumulate all text responses across iterations
-            current_mode = "undefined"  # Start as undefined - Claude MUST call set_mode to set the mode
+            current_mode = "build"  # Always in build mode
             
             # Track already extracted songs to avoid duplicates (using (track, artist) tuples as keys)
             if already_extracted_songs is None:
@@ -233,13 +207,6 @@ WORKFLOW FOR BUILD MODE:
                     elif block.type == "tool_use":
                         tool_uses.append(block)
                 
-                # Process set_mode tool calls FIRST to update mode before extraction check
-                set_mode_calls = [tu for tu in tool_uses if tu.name == "set_mode"]
-                for tool_use in set_mode_calls:
-                    mode = tool_use.input.get("mode", "chat")
-                    current_mode = mode  # Update mode state immediately
-                    logger.info(f"🎯 Mode set to: {mode}")
-                
                 # Yield text from this iteration immediately
                 if text_content:
                     # Signal new bubble for subsequent iterations (after tool processing)
@@ -252,8 +219,8 @@ WORKFLOW FOR BUILD MODE:
                     # Yield the text chunk immediately
                     yield {"type": "text", "content": text_content}
                     
-                    # Extract songs incrementally from accumulated text ONLY if in 'build' mode
-                    if on_songs_extracted and current_mode == "build":
+                    # Extract songs incrementally from accumulated text (always in build mode)
+                    if on_songs_extracted:
                         try:
                             from services.extraction_service import ExtractionService
                             extraction_service = ExtractionService()
@@ -267,16 +234,12 @@ WORKFLOW FOR BUILD MODE:
                                     track_key = (song["track"].lower().strip(), song["artist"].lower().strip())
                                     already_extracted_songs.add(track_key)
                                 
-                                logger.info(f"🎵 Extracted {len(new_songs)} new song(s) from Claude response (build mode)")
+                                logger.info(f"🎵 Extracted {len(new_songs)} new song(s) from Claude response")
                                 # Call callback with new songs one-by-one for immediate validation
                                 for song in new_songs:
                                     on_songs_extracted([song])  # Pass as list with single song
                         except Exception as e:
                             logger.warning(f"⚠️ Failed to extract songs: {str(e)}")
-                    elif current_mode == "chat":
-                        logger.info("💬 Chat mode - skipping song extraction")
-                    elif current_mode == "undefined":
-                        logger.info("⚠️ Mode undefined - skipping song extraction (Claude must call set_mode first)")
                 
                 # If no tool uses, we're done
                 if not tool_uses:
@@ -290,9 +253,6 @@ WORKFLOW FOR BUILD MODE:
                     if tool_use.name == "search_web":
                         query = tool_use.input.get("query", "")
                         logger.info(f"     Query: {query}")
-                    elif tool_use.name == "set_mode":
-                        mode = tool_use.input.get("mode", "")
-                        logger.info(f"     Mode: {mode}")
                 
                 # Execute tools and add results to conversation
                 tool_results = []
@@ -306,14 +266,13 @@ WORKFLOW FOR BUILD MODE:
                             "tool_use_id": tool_use.id,
                             "content": result
                         })
-                    elif tool_use.name == "set_mode":
-                        mode = tool_use.input.get("mode", "chat")
-                        # Mode already updated above, just return confirmation
-                        logger.info(f"🎯 Confirming mode: {mode}")
+                    else:
+                        # Unknown tool - log warning
+                        logger.warning(f"⚠️ Unknown tool requested: {tool_use.name}")
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": tool_use.id,
-                            "content": f"Mode set to {mode}"
+                            "content": f"Unknown tool: {tool_use.name}"
                         })
                 
                 # Add assistant's message with tool use to conversation
