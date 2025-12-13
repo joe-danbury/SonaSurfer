@@ -1,7 +1,40 @@
 import { useState, useEffect } from 'react';
-import SlotMachineLoader from './slot_machine_loading_text_react_component';
 
 const API_BASE_URL = 'http://localhost:8000';
+
+// Simple loading indicator with cycling phrases and bouncing dots
+function LoadingIndicator() {
+  const phrases = [
+    "Exploring the vibes",
+    "Hunting down tracks",
+    "Finding the beat",
+    "Crafting the playlist",
+  ];
+  
+  const [phraseIndex, setPhraseIndex] = useState(0);
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPhraseIndex(prev => (prev + 1) % phrases.length);
+    }, 2200);
+    return () => clearInterval(interval);
+  }, [phrases.length]);
+  
+  return (
+    <div className="flex justify-start">
+      <div className="bg-white/20 text-white rounded-lg px-4 py-2">
+        <div className="flex items-center gap-3">
+          <span className="text-white/90">{phrases[phraseIndex]}</span>
+          <div className="flex items-center gap-1">
+            <div className="w-2 h-2 bg-white rounded-full animate-bounce"></div>
+            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function App() {
   const [messages, setMessages] = useState([]);
@@ -504,20 +537,8 @@ function App() {
                   </div>
                 </div>
               ))}
-              {/* Show slot machine loader during processing phase */}
-              {processingPhase === 'processing' && <SlotMachineLoader />}
-              {/* Show simple loading dots only during initial phase */}
-              {isLoadingResponse && processingPhase === 'initial' && (
-                <div className="flex justify-start">
-                  <div className="bg-white/20 text-white rounded-lg px-4 py-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-white rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                      <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* Show loading indicator with cycling phrases */}
+              {isLoadingResponse && <LoadingIndicator />}
             </>
           )}
         </div>
