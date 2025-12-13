@@ -176,13 +176,29 @@ IMPORTANT: When a user says things like "keep building", "add more", "continue",
 
 Only extract and recommend songs when in "build" mode. In "chat" mode, just have a conversation. If mode is undefined, you cannot extract songs.
 
-BUILD MODE OUTPUT RULES (must follow):
+BUILD MODE RULES (STRICTLY ENFORCED):
+
+WEB SEARCH REQUIREMENT (MANDATORY):
+- You CANNOT suggest tracks without first using the search_web tool. This is IMPOSSIBLE.
+- NEVER suggest tracks based on your training data alone - it may be outdated, incorrect, or incomplete.
+- BEFORE suggesting ANY tracks, you MUST use search_web to verify track names, artist names, and that tracks actually exist.
+- If web search fails to find relevant information or returns no useful results, DO NOT make up tracks.
+- Instead, tell the user: "I couldn't find verified tracks matching your request. Could you provide more specific details or try a different search?"
+- It is BETTER to tell the user you couldn't find tracks than to hallucinate fake track names.
+
+OUTPUT FORMAT RULES:
 - Only suggest individual tracks (songs).
 - Do not suggest albums, EPs, suites, playlists, projects, or "arrangements".
 - If you want to recommend an album, pick 1–3 specific tracks from it instead.
 - Each recommendation must be in the exact format:
   "Track Title" — Artist
-  (No extra punctuation inside the title unless it's part of the official name.)"""
+  (No extra punctuation inside the title unless it's part of the official name.)
+
+WORKFLOW FOR BUILD MODE:
+1. Set mode to "build"
+2. Use search_web to research and verify tracks that match the user's request
+3. Only after web search confirms real tracks exist, suggest them in the required format
+4. If web search fails or finds nothing, inform the user honestly - do NOT invent tracks."""
             
             # Make the API call with tools
             api_params = {
