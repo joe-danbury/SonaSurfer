@@ -64,7 +64,7 @@ class ClaudeService:
     
     def search_web(self, query: str) -> str:
         """
-        Search the web using DuckDuckGo and return results.
+        Search the web using Brave Search API and return results.
         
         Args:
             query: Search query string
@@ -74,68 +74,45 @@ class ClaudeService:
         """
         logger.info(f"🔍 Web search requested: {query}")
         try:
-            # Use DuckDuckGo HTML search (no API key required)
-            search_url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
+            api_key = os.getenv("BRAVE_API_KEY")
+            if not api_key:
+                raise ValueError("BRAVE_API_KEY environment variable is not set. Check your .env file.")
+            
+            # Use Brave Search API
+            search_url = "https://api.search.brave.com/res/v1/web/search"
             
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                "X-Subscription-Token": api_key,
+                "Accept": "application/json"
+            }
+            
+            params = {
+                "q": query,
+                "count": 5
             }
             
             with httpx.Client(timeout=10.0, headers=headers) as client:
-                response = client.get(search_url)
+                response = client.get(search_url, params=params)
                 response.raise_for_status()
                 
-                html = response.text
+                data = response.json()
                 results = []
-                import re
                 
-                # Try multiple patterns to find DuckDuckGo results
-                # Pattern 1: Modern DuckDuckGo HTML structure
-                pattern1 = r'<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]*)"[^>]*>([^<]+)</a>'
-                matches1 = re.findall(pattern1, html, re.IGNORECASE)
+                # Extract results from Brave API response
+                web_results = data.get("web", {}).get("results", [])
                 
-                # Pattern 2: Alternative structure with data-testid or other attributes
-                pattern2 = r'<a[^>]*href="([^"]*)"[^>]*class="[^"]*result[^"]*"[^>]*>.*?<span[^>]*>([^<]+)</span>'
-                matches2 = re.findall(pattern2, html, re.IGNORECASE | re.DOTALL)
-                
-                # Pattern 3: Look for links in result containers
-                pattern3 = r'<div[^>]*class="[^"]*result[^"]*"[^>]*>.*?<a[^>]*href="([^"]*)"[^>]*>([^<]+)</a>'
-                matches3 = re.findall(pattern3, html, re.IGNORECASE | re.DOTALL)
-                
-                # Combine all matches
-                all_matches = matches1 + matches2 + matches3
-                
-                # Extract unique results
-                seen_urls = set()
-                for url, title in all_matches:
-                    # Clean up URL (DuckDuckGo sometimes has encoded URLs)
-                    if url.startswith('//'):
-                        url = 'https:' + url
-                    elif url.startswith('/l/?kh='):
-                        # DuckDuckGo redirect URL, try to extract actual URL
-                        url_match = re.search(r'uddg=([^&]+)', url)
-                        if url_match:
-                            from urllib.parse import unquote
-                            url = unquote(url_match.group(1))
+                for result in web_results:
+                    title = result.get("title", "").strip()
+                    url = result.get("url", "").strip()
                     
-                    # Clean up title
-                    title = re.sub(r'<[^>]+>', '', title).strip()
-                    title = re.sub(r'\s+', ' ', title)  # Normalize whitespace
-                    
-                    # Skip if we've seen this URL or if it's invalid
-                    if url and title and url not in seen_urls and url.startswith('http'):
-                        seen_urls.add(url)
+                    if url and title:
                         results.append(f"Title: {title}\nURL: {url}")
-                        if len(results) >= 5:  # Limit to top 5
-                            break
                 
                 if results:
                     logger.info(f"✅ Web search completed. Found {len(results)} results for: {query}")
                     return "\n\n".join(results)
                 else:
-                    # Log the HTML structure for debugging (first 500 chars)
                     logger.warning(f"⚠️ Web search completed but no results parsed for: {query}")
-                    logger.debug(f"HTML preview (first 500 chars): {html[:500]}")
                     return f"Search performed for: {query}\n(Results parsing may need improvement)"
                     
         except Exception as e:
