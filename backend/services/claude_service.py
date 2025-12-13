@@ -242,10 +242,15 @@ WORKFLOW FOR BUILD MODE:
                 
                 # Yield text from this iteration immediately
                 if text_content:
+                    # Signal new bubble for subsequent iterations (after tool processing)
+                    if iteration > 0:
+                        yield {"type": "new_bubble"}
+                        logger.info("📝 Starting new message bubble")
+                    
                     accumulated_text += text_content
                     logger.info(f"💬 Claude response: {text_content[:200]}{'...' if len(text_content) > 200 else ''}")
                     # Yield the text chunk immediately
-                    yield text_content
+                    yield {"type": "text", "content": text_content}
                     
                     # Extract songs incrementally from accumulated text ONLY if in 'build' mode
                     if on_songs_extracted and current_mode == "build":
@@ -329,11 +334,11 @@ WORKFLOW FOR BUILD MODE:
             # If we've done max iterations, we're done
             logger.warning(f"⚠️ Maximum tool call iterations ({max_iterations}) reached")
             if accumulated_text:
-                yield "Maximum tool call iterations reached."
+                yield {"type": "text", "content": "Maximum tool call iterations reached."}
                 
         except Exception as e:
             logger.error(f"❌ Error in Claude chat: {str(e)}")
-            yield f"Error: {str(e)}"
+            yield {"type": "error", "content": str(e)}
     
     def chat(self, messages: List[Dict[str, str]], system: Optional[str] = None, on_songs_extracted: Optional[Callable[[List[Dict[str, str]]], None]] = None, already_extracted_songs: Optional[Set[Tuple[str, str]]] = None) -> str:
         """
@@ -352,7 +357,10 @@ WORKFLOW FOR BUILD MODE:
         # Use the streaming version and accumulate results
         accumulated = ""
         for chunk in self.chat_stream(messages, system, on_songs_extracted, already_extracted_songs):
-            accumulated += chunk
+            if isinstance(chunk, dict) and chunk.get("type") == "text":
+                accumulated += chunk.get("content", "")
+            elif isinstance(chunk, str):
+                accumulated += chunk
         return accumulated
     
     def stream_chat(self, messages: List[Dict[str, str]], system: Optional[str] = None):

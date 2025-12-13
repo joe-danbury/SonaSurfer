@@ -268,9 +268,21 @@ async def chat(
                 on_songs_extracted=on_songs_extracted,
                 already_extracted_songs=already_extracted_songs
             ):
-                accumulated_response += chunk
-                # Send chunk as SSE event
-                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                # Handle different chunk types from chat_stream
+                if isinstance(chunk, dict):
+                    if chunk.get("type") == "new_bubble":
+                        # Signal frontend to create a new message bubble
+                        yield f"data: {json.dumps({'type': 'new_bubble'})}\n\n"
+                    elif chunk.get("type") == "text":
+                        content = chunk.get("content", "")
+                        accumulated_response += content
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
+                    elif chunk.get("type") == "error":
+                        yield f"data: {json.dumps({'type': 'error', 'content': chunk.get('content', 'Unknown error')})}\n\n"
+                else:
+                    # Fallback for plain text chunks
+                    accumulated_response += chunk
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
             
             # If there are failed songs, make a follow-up call to Claude to find alternatives
             if failed_songs and playlist_id and access_token:
@@ -290,8 +302,8 @@ IMPORTANT: You MUST first call set_mode with mode="build" before doing anything 
                     {"role": "user", "content": follow_up_message}
                 ]
                 
-                # Send separator before follow-up
-                yield f"data: {json.dumps({'type': 'chunk', 'content': '\n\n'})}\n\n"
+                # Send new bubble signal for follow-up response
+                yield f"data: {json.dumps({'type': 'new_bubble'})}\n\n"
                 
                 for chunk in service.chat_stream(
                     messages=follow_up_messages,
@@ -299,7 +311,17 @@ IMPORTANT: You MUST first call set_mode with mode="build" before doing anything 
                     on_songs_extracted=on_songs_extracted,
                     already_extracted_songs=already_extracted_songs
                 ):
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                    # Handle different chunk types from chat_stream
+                    if isinstance(chunk, dict):
+                        if chunk.get("type") == "new_bubble":
+                            yield f"data: {json.dumps({'type': 'new_bubble'})}\n\n"
+                        elif chunk.get("type") == "text":
+                            content = chunk.get("content", "")
+                            yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
+                        elif chunk.get("type") == "error":
+                            yield f"data: {json.dumps({'type': 'error', 'content': chunk.get('content', 'Unknown error')})}\n\n"
+                    else:
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
             
             # Send completion event
             yield f"data: {json.dumps({'type': 'done'})}\n\n"

@@ -179,6 +179,7 @@ function App() {
         let buffer = '';
         let accumulatedText = '';
         let streamComplete = false;
+        let currentResponseId = responseId; // Track current bubble's responseId
 
         while (!streamComplete) {
           const { done, value } = await reader.read();
@@ -200,28 +201,34 @@ function App() {
               try {
                 const data = JSON.parse(message.slice(6)); // Remove 'data: ' prefix
                 
-                if (data.type === 'chunk') {
+                if (data.type === 'new_bubble') {
+                  // Create a new message bubble for the next response segment
+                  const newResponseId = Date.now() + Math.random();
+                  currentResponseId = newResponseId;
+                  accumulatedText = ''; // Reset for new bubble
+                  setMessages(prev => [...prev, { text: '', sender: 'assistant', responseId: newResponseId }]);
+                } else if (data.type === 'chunk') {
                   accumulatedText += data.content;
-                  // Update the assistant message incrementally by finding it via responseId
+                  // Update the current assistant message incrementally by finding it via currentResponseId
                   setMessages(prev => {
                     const updated = [...prev];
-                    const messageIndex = updated.findIndex(msg => msg.responseId === responseId);
+                    const messageIndex = updated.findIndex(msg => msg.responseId === currentResponseId);
                     if (messageIndex !== -1) {
                       updated[messageIndex] = { ...updated[messageIndex], text: accumulatedText };
                     } else {
                       // Fallback: if message not found, append new one (shouldn't happen)
-                      updated.push({ text: accumulatedText, sender: 'assistant', responseId });
+                      updated.push({ text: accumulatedText, sender: 'assistant', responseId: currentResponseId });
                     }
                     return updated;
                   });
                 } else if (data.type === 'error') {
                   setMessages(prev => {
                     const updated = [...prev];
-                    const messageIndex = updated.findIndex(msg => msg.responseId === responseId);
+                    const messageIndex = updated.findIndex(msg => msg.responseId === currentResponseId);
                     if (messageIndex !== -1) {
-                      updated[messageIndex] = { text: `Error: ${data.content}`, sender: 'system', responseId };
+                      updated[messageIndex] = { text: `Error: ${data.content}`, sender: 'system', responseId: currentResponseId };
                     } else {
-                      updated.push({ text: `Error: ${data.content}`, sender: 'system', responseId });
+                      updated.push({ text: `Error: ${data.content}`, sender: 'system', responseId: currentResponseId });
                     }
                     return updated;
                   });
