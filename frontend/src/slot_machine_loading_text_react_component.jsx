@@ -100,7 +100,7 @@ export default function SlotMachineLoader() {
   const washColour = partyColour.replace(", 0.70)", ", 0.18)");
 
   return (
-    <div className="w-full flex items-center justify-center p-6">
+    <div className="w-full flex items-center justify-start">
       <div className="relative">
         <div
           className="relative rounded-2xl border bg-white shadow-sm px-4 py-3"
