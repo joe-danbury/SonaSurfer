@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import SlotMachineLoader from './slot_machine_loading_text_react_component';
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -16,6 +17,8 @@ function App() {
   });
   const [isCreating, setIsCreating] = useState(false);
   const [isLoadingResponse, setIsLoadingResponse] = useState(false);
+  // 'idle' = no request, 'initial' = showing first bubble, 'processing' = tool calls in progress (show loader)
+  const [processingPhase, setProcessingPhase] = useState('idle');
 
   // Check for tokens on mount and handle OAuth callback
   useEffect(() => {
@@ -157,11 +160,11 @@ function App() {
       headers['Authorization'] = `Bearer ${accessToken}`;
     }
 
-    // Add placeholder assistant message that we'll update incrementally
-    // Use a unique ID to track this specific response (declared outside try-catch for error handling)
-    const responseId = Date.now() + Math.random();
-    const initialMessages = [...newMessages, { text: '', sender: 'assistant', responseId }];
-    setMessages(initialMessages);
+    // Response ID for tracking the current bubble (declared outside try-catch for error handling)
+    let responseId = Date.now() + Math.random();
+    
+    // Set processing phase to initial (waiting for first response)
+    setProcessingPhase('initial');
 
     try {
         // Call Claude API with streaming
@@ -180,6 +183,8 @@ function App() {
         let accumulatedText = '';
         let streamComplete = false;
         let currentResponseId = responseId; // Track current bubble's responseId
+        let firstBubbleCreated = false; // Track if we've created the first bubble
+        let isInProcessingPhase = false; // Track if we're past the first bubble (local, no stale closure)
 
         while (!streamComplete) {
           const { done, value } = await reader.read();
@@ -206,21 +211,40 @@ function App() {
                   const newResponseId = Date.now() + Math.random();
                   currentResponseId = newResponseId;
                   accumulatedText = ''; // Reset for new bubble
-                  setMessages(prev => [...prev, { text: '', sender: 'assistant', responseId: newResponseId }]);
+                  firstBubbleCreated = false; // Reset so next chunk creates the bubble
+                  isInProcessingPhase = true; // Mark that we're past the first bubble
+                  
+                  // After the first bubble, switch to processing phase (show loader)
+                  // Mark subsequent bubbles as processing bubbles (hidden until done)
+                  setProcessingPhase('processing');
                 } else if (data.type === 'chunk') {
                   accumulatedText += data.content;
-                  // Update the current assistant message incrementally by finding it via currentResponseId
-                  setMessages(prev => {
-                    const updated = [...prev];
-                    const messageIndex = updated.findIndex(msg => msg.responseId === currentResponseId);
-                    if (messageIndex !== -1) {
-                      updated[messageIndex] = { ...updated[messageIndex], text: accumulatedText };
-                    } else {
-                      // Fallback: if message not found, append new one (shouldn't happen)
-                      updated.push({ text: accumulatedText, sender: 'assistant', responseId: currentResponseId });
-                    }
-                    return updated;
-                  });
+                  
+                  // Check if we need to create a new bubble for this chunk
+                  if (!firstBubbleCreated) {
+                    firstBubbleCreated = true;
+                    // Determine if this is the very first bubble or a processing bubble
+                    setMessages(prev => [...prev, { 
+                      text: accumulatedText, 
+                      sender: 'assistant', 
+                      responseId: currentResponseId,
+                      isFirstBubble: !isInProcessingPhase,
+                      isProcessingBubble: isInProcessingPhase
+                    }]);
+                  } else {
+                    // Update the current assistant message incrementally by finding it via currentResponseId
+                    setMessages(prev => {
+                      const updated = [...prev];
+                      const messageIndex = updated.findIndex(msg => msg.responseId === currentResponseId);
+                      if (messageIndex !== -1) {
+                        updated[messageIndex] = { ...updated[messageIndex], text: accumulatedText };
+                      } else {
+                        // Fallback: append if not found
+                        updated.push({ text: accumulatedText, sender: 'assistant', responseId: currentResponseId });
+                      }
+                      return updated;
+                    });
+                  }
                 } else if (data.type === 'error') {
                   setMessages(prev => {
                     const updated = [...prev];
@@ -235,7 +259,22 @@ function App() {
                   setIsLoadingResponse(false);
                   return;
                 } else if (data.type === 'done') {
-                  // Stream complete
+                  // Stream complete - reset processing phase and mark last bubble as final (visible)
+                  setProcessingPhase('idle');
+                  setMessages(prev => {
+                    const updated = [...prev];
+                    // Find the last processing bubble and mark it as the final message (visible)
+                    const lastProcessingIndex = updated.findLastIndex(msg => msg.isProcessingBubble);
+                    if (lastProcessingIndex !== -1 && updated[lastProcessingIndex].text) {
+                      updated[lastProcessingIndex] = { 
+                        ...updated[lastProcessingIndex], 
+                        isProcessingBubble: false,
+                        isFinalMessage: true 
+                      };
+                    }
+                    // Remove empty processing bubbles
+                    return updated.filter(msg => !msg.isProcessingBubble || msg.text);
+                  });
                   streamComplete = true;
                   break;
                 }
@@ -305,6 +344,7 @@ function App() {
       });
     } finally {
       setIsLoadingResponse(false);
+      setProcessingPhase('idle');
     }
   };
 
@@ -430,7 +470,9 @@ function App() {
             </div>
           ) : (
             <>
-              {messages.map((message, index) => (
+              {messages
+                .filter(message => !message.isProcessingBubble) // Hide processing bubbles during processing
+                .map((message, index) => (
                 <div
                   key={message.responseId || `msg-${index}-${message.sender}`}
                   className={`flex ${message.sender === 'user' ? 'justify-end' : message.sender === 'system' ? 'justify-center' : 'justify-start'}`}
@@ -448,7 +490,10 @@ function App() {
                   </div>
                 </div>
               ))}
-              {isLoadingResponse && (
+              {/* Show slot machine loader during processing phase */}
+              {processingPhase === 'processing' && <SlotMachineLoader />}
+              {/* Show simple loading dots only during initial phase */}
+              {isLoadingResponse && processingPhase === 'initial' && (
                 <div className="flex justify-start">
                   <div className="bg-white/20 text-white rounded-lg px-4 py-2">
                     <div className="flex items-center gap-2">
