@@ -119,9 +119,9 @@ class ClaudeService:
             logger.error(f"❌ Web search error for query '{query}': {str(e)}")
             return f"Error performing web search: {str(e)}"
     
-    def chat(self, messages: List[Dict[str, str]], system: Optional[str] = None, on_songs_extracted: Optional[Callable[[List[Dict[str, str]]], None]] = None, already_extracted_songs: Optional[Set[Tuple[str, str]]] = None) -> str:
+    def chat_stream(self, messages: List[Dict[str, str]], system: Optional[str] = None, on_songs_extracted: Optional[Callable[[List[Dict[str, str]]], None]] = None, already_extracted_songs: Optional[Set[Tuple[str, str]]] = None):
         """
-        Send a chat message to Claude and get a response.
+        Stream a chat message to Claude and get responses incrementally.
         Handles tool calls automatically.
         
         Args:
@@ -130,8 +130,8 @@ class ClaudeService:
             system: Optional system message to set Claude's behavior
             on_songs_extracted: Optional callback for when songs are extracted (only called in 'build' mode)
         
-        Returns:
-            Claude's response text
+        Yields:
+            Text chunks as they arrive from Claude
         """
         try:
             # Prepare the message list for Anthropic API
@@ -240,10 +240,12 @@ WORKFLOW FOR BUILD MODE:
                     current_mode = mode  # Update mode state immediately
                     logger.info(f"🎯 Mode set to: {mode}")
                 
-                # Accumulate text from this iteration
+                # Yield text from this iteration immediately
                 if text_content:
                     accumulated_text += text_content
                     logger.info(f"💬 Claude response: {text_content[:200]}{'...' if len(text_content) > 200 else ''}")
+                    # Yield the text chunk immediately
+                    yield text_content
                     
                     # Extract songs incrementally from accumulated text ONLY if in 'build' mode
                     if on_songs_extracted and current_mode == "build":
@@ -271,10 +273,10 @@ WORKFLOW FOR BUILD MODE:
                     elif current_mode == "undefined":
                         logger.info("⚠️ Mode undefined - skipping song extraction (Claude must call set_mode first)")
                 
-                # If no tool uses, return the accumulated text response
+                # If no tool uses, we're done
                 if not tool_uses:
                     logger.info("✅ Claude response complete (no tool calls)")
-                    return accumulated_text if accumulated_text else ""
+                    return
                 
                 # Log tool calls
                 logger.info(f"🔧 Claude requested {len(tool_uses)} tool call(s):")
@@ -324,13 +326,34 @@ WORKFLOW FOR BUILD MODE:
                 iteration += 1
                 logger.info(f"🔄 Continuing conversation with tool results (iteration {iteration})")
             
-            # If we've done max iterations, return the accumulated text content
+            # If we've done max iterations, we're done
             logger.warning(f"⚠️ Maximum tool call iterations ({max_iterations}) reached")
-            return accumulated_text if accumulated_text else "Maximum tool call iterations reached."
+            if accumulated_text:
+                yield "Maximum tool call iterations reached."
                 
         except Exception as e:
             logger.error(f"❌ Error in Claude chat: {str(e)}")
-            raise Exception(f"Failed to get response from Claude: {str(e)}")
+            yield f"Error: {str(e)}"
+    
+    def chat(self, messages: List[Dict[str, str]], system: Optional[str] = None, on_songs_extracted: Optional[Callable[[List[Dict[str, str]]], None]] = None, already_extracted_songs: Optional[Set[Tuple[str, str]]] = None) -> str:
+        """
+        Send a chat message to Claude and get a response (non-streaming version).
+        Handles tool calls automatically.
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content' keys
+                     Example: [{"role": "user", "content": "Hello!"}]
+            system: Optional system message to set Claude's behavior
+            on_songs_extracted: Optional callback for when songs are extracted (only called in 'build' mode)
+        
+        Returns:
+            Claude's response text (accumulated from all chunks)
+        """
+        # Use the streaming version and accumulate results
+        accumulated = ""
+        for chunk in self.chat_stream(messages, system, on_songs_extracted, already_extracted_songs):
+            accumulated += chunk
+        return accumulated
     
     def stream_chat(self, messages: List[Dict[str, str]], system: Optional[str] = None):
         """

@@ -1,12 +1,13 @@
 from fastapi import FastAPI, HTTPException, Query, Header, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from dotenv import load_dotenv
 import yaml
 import time
 import secrets
 import os
 import logging
+import json
 
 # Configure logging
 logging.basicConfig(
@@ -184,128 +185,137 @@ async def create_playlist(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to create playlist: {str(e)}")
 
-@app.post("/chat", response_model=ChatResponse)
+@app.post("/chat")
 async def chat(
     request: ChatRequest,
     playlist_id: str = Query(None, description="Optional playlist ID to automatically add extracted tracks"),
     authorization: str = Header(default=None, description="Optional Bearer token for adding tracks to playlist")
 ):
-    """Send a chat message to Claude and get a response"""
-    try:
-        service = get_claude_service()
-        
-        # Convert Pydantic models to dict format
-        messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
-        
-        # Log incoming request
-        last_user_message = next((msg["content"] for msg in reversed(messages) if msg.get("role") == "user"), "N/A")
-        logger.info(f"📨 Incoming chat request: {last_user_message[:100]}{'...' if len(last_user_message) > 100 else ''}")
-        
-        # Store extracted songs from the conversation
-        extracted_songs = []
-        failed_songs = []  # Track songs that failed Spotify validation
-        already_extracted_songs = set()  # Track (track, artist) tuples to avoid duplicates
-        
-        # Get access token if playlist_id is provided
-        access_token = None
-        if playlist_id and authorization:
-            if authorization.startswith("Bearer "):
-                access_token = authorization.replace("Bearer ", "")
-            else:
-                access_token = authorization
-        
-        # Callback function to handle extracted songs (called one-by-one)
-        def on_songs_extracted(songs: List[Dict[str, str]]):
-            """Callback when songs are extracted from Claude's response (one song at a time)"""
-            if not songs or len(songs) == 0:
-                return
+    """Send a chat message to Claude and get a streaming response"""
+    async def generate():
+        try:
+            service = get_claude_service()
             
-            song = songs[0]  # Should only be one song at a time now
-            extracted_songs.append(song)
+            # Convert Pydantic models to dict format
+            messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
             
-            # Validate and add to playlist immediately if playlist_id and access_token are provided
-            if playlist_id and access_token:
-                try:
-                    spotify_service = get_spotify_service()
-                    
-                    track_uri = spotify_service.search_track(
-                        access_token=access_token,
-                        track_name=song.get("track", ""),
-                        artist_name=song.get("artist")
-                    )
-                    
-                    if track_uri:
-                        # Add track immediately (one at a time)
-                        spotify_service.add_tracks_to_playlist(
+            # Log incoming request
+            last_user_message = next((msg["content"] for msg in reversed(messages) if msg.get("role") == "user"), "N/A")
+            logger.info(f"📨 Incoming chat request: {last_user_message[:100]}{'...' if len(last_user_message) > 100 else ''}")
+            
+            # Store extracted songs from the conversation
+            extracted_songs = []
+            failed_songs = []  # Track songs that failed Spotify validation
+            already_extracted_songs = set()  # Track (track, artist) tuples to avoid duplicates
+            
+            # Get access token if playlist_id is provided
+            access_token = None
+            if playlist_id and authorization:
+                if authorization.startswith("Bearer "):
+                    access_token = authorization.replace("Bearer ", "")
+                else:
+                    access_token = authorization
+            
+            # Callback function to handle extracted songs (called one-by-one)
+            def on_songs_extracted(songs: List[Dict[str, str]]):
+                """Callback when songs are extracted from Claude's response (one song at a time)"""
+                if not songs or len(songs) == 0:
+                    return
+                
+                song = songs[0]  # Should only be one song at a time now
+                extracted_songs.append(song)
+                
+                # Validate and add to playlist immediately if playlist_id and access_token are provided
+                if playlist_id and access_token:
+                    try:
+                        spotify_service = get_spotify_service()
+                        
+                        track_uri = spotify_service.search_track(
                             access_token=access_token,
-                            playlist_id=playlist_id,
-                            track_uris=[track_uri]
+                            track_name=song.get("track", ""),
+                            artist_name=song.get("artist")
                         )
-                        logger.info(f"✅ Added track to playlist: {song.get('track')} by {song.get('artist')}")
-                    else:
-                        # Track validation failed - add to failed list
+                        
+                        if track_uri:
+                            # Add track immediately (one at a time)
+                            spotify_service.add_tracks_to_playlist(
+                                access_token=access_token,
+                                playlist_id=playlist_id,
+                                track_uris=[track_uri]
+                            )
+                            logger.info(f"✅ Added track to playlist: {song.get('track')} by {song.get('artist')}")
+                        else:
+                            # Track validation failed - add to failed list
+                            failed_songs.append(song)
+                            # Mark as already extracted so we don't try it again
+                            track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
+                            already_extracted_songs.add(track_key)
+                            logger.warning(f"❌ Track not found on Spotify: {song.get('track')} by {song.get('artist')}")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to add track to playlist: {str(e)}")
                         failed_songs.append(song)
                         # Mark as already extracted so we don't try it again
                         track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
                         already_extracted_songs.add(track_key)
-                        logger.warning(f"❌ Track not found on Spotify: {song.get('track')} by {song.get('artist')}")
-                except Exception as e:
-                    logger.error(f"❌ Failed to add track to playlist: {str(e)}")
-                    failed_songs.append(song)
-                    # Mark as already extracted so we don't try it again
-                    track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
-                    already_extracted_songs.add(track_key)
-            else:
-                logger.info(f"🎵 Song extracted (no playlist context): {song.get('track')} by {song.get('artist')}")
-        
-        # Get response from Claude (with extraction callback)
-        response_text = service.chat(
-            messages=messages, 
-            system=request.system, 
-            on_songs_extracted=on_songs_extracted,
-            already_extracted_songs=already_extracted_songs
-        )
-        
-        # If there are failed songs, make a follow-up call to Claude to find alternatives
-        if failed_songs and playlist_id and access_token:
-            logger.info(f"⚠️ {len(failed_songs)} track(s) failed validation. Asking Claude to find alternatives.")
+                else:
+                    logger.info(f"🎵 Song extracted (no playlist context): {song.get('track')} by {song.get('artist')}")
             
-            # Build message asking Claude to find alternatives
-            failed_tracks_text = "\n".join([f"- {song.get('track')} by {song.get('artist')}" for song in failed_songs])
-            follow_up_message = f"""The following tracks could not be found on Spotify (they may not exist, have incorrect names, or incorrect artist information):
+            # Stream response from Claude (with extraction callback)
+            accumulated_response = ""
+            for chunk in service.chat_stream(
+                messages=messages, 
+                system=request.system, 
+                on_songs_extracted=on_songs_extracted,
+                already_extracted_songs=already_extracted_songs
+            ):
+                accumulated_response += chunk
+                # Send chunk as SSE event
+                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+            
+            # If there are failed songs, make a follow-up call to Claude to find alternatives
+            if failed_songs and playlist_id and access_token:
+                logger.info(f"⚠️ {len(failed_songs)} track(s) failed validation. Asking Claude to find alternatives.")
+                
+                # Build message asking Claude to find alternatives
+                failed_tracks_text = "\n".join([f"- {song.get('track')} by {song.get('artist')}" for song in failed_songs])
+                follow_up_message = f"""The following tracks could not be found on Spotify (they may not exist, have incorrect names, or incorrect artist information):
 
 {failed_tracks_text}
 
 IMPORTANT: You MUST first call set_mode with mode="build" before doing anything else. Then use search_web to find verified alternative tracks that match the same musical style/genre, and suggest them in the playlist format."""
+                
+                # Make follow-up call
+                follow_up_messages = messages + [
+                    {"role": "assistant", "content": accumulated_response},
+                    {"role": "user", "content": follow_up_message}
+                ]
+                
+                # Send separator before follow-up
+                yield f"data: {json.dumps({'type': 'chunk', 'content': '\n\n'})}\n\n"
+                
+                for chunk in service.chat_stream(
+                    messages=follow_up_messages,
+                    system=request.system,
+                    on_songs_extracted=on_songs_extracted,
+                    already_extracted_songs=already_extracted_songs
+                ):
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
             
-            # Make follow-up call
-            follow_up_messages = messages + [
-                {"role": "assistant", "content": response_text},
-                {"role": "user", "content": follow_up_message}
-            ]
+            # Send completion event
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
             
-            follow_up_response = service.chat(
-                messages=follow_up_messages,
-                system=request.system,
-                on_songs_extracted=on_songs_extracted,
-                already_extracted_songs=already_extracted_songs
-            )
-            
-            # Combine responses
-            response_text = response_text + "\n\n" + follow_up_response
-        
-        logger.info(f"📤 Sending response to client (length: {len(response_text)} chars)")
-        logger.info(f"🎵 Total songs extracted during conversation: {len(extracted_songs)}")
-        if failed_songs:
-            logger.info(f"❌ Songs that failed validation: {len(failed_songs)}")
-        
-        return ChatResponse(message=response_text)
-    except ValueError as e:
-        logger.error(f"❌ ValueError in chat endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        logger.error(f"❌ Exception in chat endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get response from Claude: {str(e)}")
+            logger.info(f"📤 Stream completed. Total songs extracted: {len(extracted_songs)}")
+            if failed_songs:
+                logger.info(f"❌ Songs that failed validation: {len(failed_songs)}")
+                
+        except ValueError as e:
+            logger.error(f"❌ ValueError in chat endpoint: {str(e)}")
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+        except Exception as e:
+            logger.error(f"❌ Exception in chat endpoint: {str(e)}")
+            yield f"data: {json.dumps({'type': 'error', 'content': f'Failed to get response from Claude: {str(e)}'})}\n\n"
+    
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 @app.get("/playlists/{playlist_id}")
 async def get_playlist(

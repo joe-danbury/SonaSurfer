@@ -158,7 +158,11 @@ function App() {
         headers['Authorization'] = `Bearer ${accessToken}`;
       }
 
-      // Call Claude API
+      // Add placeholder assistant message that we'll update incrementally
+      const assistantMessageIndex = newMessages.length;
+      setMessages([...newMessages, { text: '', sender: 'assistant' }]);
+
+      // Call Claude API with streaming
       const response = await fetch(chatUrl, {
         method: 'POST',
         headers: headers,
@@ -168,9 +172,59 @@ function App() {
       });
 
       if (response.ok) {
-        const data = await response.json();
-        // Add Claude's response to messages
-        setMessages([...newMessages, { text: data.message, sender: 'assistant' }]);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let accumulatedText = '';
+        let streamComplete = false;
+
+        while (!streamComplete) {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            break;
+          }
+
+          // Decode chunk and add to buffer
+          buffer += decoder.decode(value, { stream: true });
+          
+          // Process complete SSE messages (separated by \n\n)
+          while (buffer.includes('\n\n')) {
+            const messageEnd = buffer.indexOf('\n\n');
+            const message = buffer.substring(0, messageEnd);
+            buffer = buffer.substring(messageEnd + 2);
+            
+            if (message.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(message.slice(6)); // Remove 'data: ' prefix
+                
+                if (data.type === 'chunk') {
+                  accumulatedText += data.content;
+                  // Update the assistant message incrementally
+                  setMessages(prev => {
+                    const updated = [...prev];
+                    updated[assistantMessageIndex] = { text: accumulatedText, sender: 'assistant' };
+                    return updated;
+                  });
+                } else if (data.type === 'error') {
+                  setMessages(prev => {
+                    const updated = [...prev];
+                    updated[assistantMessageIndex] = { text: `Error: ${data.content}`, sender: 'system' };
+                    return updated;
+                  });
+                  setIsLoadingResponse(false);
+                  return;
+                } else if (data.type === 'done') {
+                  // Stream complete
+                  streamComplete = true;
+                  break;
+                }
+              } catch (e) {
+                console.error('Failed to parse SSE data:', e, message);
+              }
+            }
+          }
+        }
         
         // Refresh playlist if tracks were added
         // TODO: Move playlist refresh to backend/WebSocket for real-time updates
@@ -191,10 +245,14 @@ function App() {
         }
       } else {
         const errorData = await response.json();
-        setMessages([...newMessages, {
-          text: `Error: ${errorData.detail || 'Failed to get response from Claude'}`,
-          sender: 'system'
-        }]);
+        setMessages(prev => {
+          const updated = [...prev];
+          updated[assistantMessageIndex] = {
+            text: `Error: ${errorData.detail || 'Failed to get response from Claude'}`,
+            sender: 'system'
+          };
+          return updated;
+        });
       }
     } catch (error) {
       setMessages([...newMessages, {
