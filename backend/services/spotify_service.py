@@ -93,6 +93,7 @@ class SpotifyService:
     def search_track(self, access_token: str, track_name: str, artist_name: Optional[str] = None) -> Optional[str]:
         """
         Search for a track on Spotify and return its URI.
+        Prioritizes exact matches when artist_name is provided.
         
         Args:
             access_token: User's Spotify access token
@@ -113,17 +114,39 @@ class SpotifyService:
             
             logger.info(f"🔍 Searching Spotify for: {query}")
             
-            # Search for track
-            results = spotify.search(q=query, type='track', limit=1)
+            # Search for track - get multiple results to find best match
+            results = spotify.search(q=query, type='track', limit=10)
+            tracks = results['tracks']['items']
             
-            if results['tracks']['items']:
-                track = results['tracks']['items'][0]
-                track_uri = track['uri']
-                logger.info(f"✅ Found track: {track['name']} by {track['artists'][0]['name']} - URI: {track_uri}")
-                return track_uri
-            else:
+            if not tracks:
                 logger.warning(f"⚠️ No track found for: {query}")
                 return None
+            
+            # Normalize strings for comparison (lowercase, strip whitespace)
+            track_name_normalized = track_name.lower().strip()
+            artist_name_normalized = artist_name.lower().strip() if artist_name else None
+            
+            # If we have an artist name, look for exact match first
+            if artist_name_normalized:
+                for track in tracks:
+                    track_name_match = track['name'].lower().strip()
+                    # Check if any artist matches
+                    track_artists = [artist['name'].lower().strip() for artist in track['artists']]
+                    
+                    # Exact match on both track name and artist name
+                    if track_name_match == track_name_normalized and artist_name_normalized in track_artists:
+                        track_uri = track['uri']
+                        logger.info(f"✅ Found exact match: {track['name']} by {track['artists'][0]['name']} - URI: {track_uri}")
+                        return track_uri
+                
+                # No exact match found, log and fall through to first result
+                logger.info(f"ℹ️ No exact match found for '{track_name}' by '{artist_name}', using best match")
+            
+            # Fallback: use first result (Spotify's best match)
+            track = tracks[0]
+            track_uri = track['uri']
+            logger.info(f"✅ Found track (best match): {track['name']} by {track['artists'][0]['name']} - URI: {track_uri}")
+            return track_uri
                 
         except Exception as e:
             logger.error(f"❌ Error searching for track '{track_name}': {str(e)}")
