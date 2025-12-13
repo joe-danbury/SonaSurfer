@@ -134,44 +134,44 @@ function App() {
     setMessages(newMessages);
     setIsLoadingResponse(true);
 
+    // Convert messages to API format (include conversation history)
+    const apiMessages = newMessages
+      .filter(msg => msg.sender === 'user' || msg.sender === 'assistant')
+      .map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.text
+      }));
+
+    // Build request URL with playlist_id if available
+    // TODO: Move playlist_id management to backend later
+    let chatUrl = `${API_BASE_URL}/chat`;
+    if (playlist?.id) {
+      chatUrl += `?playlist_id=${playlist.id}`;
+    }
+
+    // Build headers
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    if (accessToken && playlist?.id) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+
+    // Add placeholder assistant message that we'll update incrementally
+    // Use a unique ID to track this specific response (declared outside try-catch for error handling)
+    const responseId = Date.now() + Math.random();
+    const initialMessages = [...newMessages, { text: '', sender: 'assistant', responseId }];
+    setMessages(initialMessages);
+
     try {
-      // Convert messages to API format (include conversation history)
-      const apiMessages = newMessages
-        .filter(msg => msg.sender === 'user' || msg.sender === 'assistant')
-        .map(msg => ({
-          role: msg.sender === 'user' ? 'user' : 'assistant',
-          content: msg.text
-        }));
-
-      // Build request URL with playlist_id if available
-      // TODO: Move playlist_id management to backend later
-      let chatUrl = `${API_BASE_URL}/chat`;
-      if (playlist?.id) {
-        chatUrl += `?playlist_id=${playlist.id}`;
-      }
-
-      // Build headers
-      const headers = {
-        'Content-Type': 'application/json',
-      };
-      if (accessToken && playlist?.id) {
-        headers['Authorization'] = `Bearer ${accessToken}`;
-      }
-
-      // Add placeholder assistant message that we'll update incrementally
-      // Use a unique ID to track this specific response
-      const responseId = Date.now() + Math.random();
-      const initialMessages = [...newMessages, { text: '', sender: 'assistant', responseId }];
-      setMessages(initialMessages);
-
-      // Call Claude API with streaming
-      const response = await fetch(chatUrl, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify({
-          messages: apiMessages
-        })
-      });
+        // Call Claude API with streaming
+        const response = await fetch(chatUrl, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify({
+            messages: apiMessages
+          })
+        });
 
       if (response.ok) {
         const reader = response.body.getReader();
