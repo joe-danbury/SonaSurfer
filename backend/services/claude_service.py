@@ -174,7 +174,15 @@ Determine the user's intent and call set_mode immediately:
 
 IMPORTANT: When a user says things like "keep building", "add more", "continue", "extend the playlist", or provides song suggestions, they want to BUILD the playlist → use mode="build".
 
-Only extract and recommend songs when in "build" mode. In "chat" mode, just have a conversation. If mode is undefined, you cannot extract songs."""
+Only extract and recommend songs when in "build" mode. In "chat" mode, just have a conversation. If mode is undefined, you cannot extract songs.
+
+BUILD MODE OUTPUT RULES (must follow):
+- Only suggest individual tracks (songs).
+- Do not suggest albums, EPs, suites, playlists, projects, or "arrangements".
+- If you want to recommend an album, pick 1–3 specific tracks from it instead.
+- Each recommendation must be in the exact format:
+  "Track Title" — Artist
+  (No extra punctuation inside the title unless it's part of the official name.)"""
             
             # Make the API call with tools
             api_params = {
