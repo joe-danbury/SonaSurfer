@@ -33,13 +33,13 @@ class ClaudeService:
         self.tools = [
             {
                 "name": "search_web",
-                "description": "Search the web for current information, news, facts, or any topic. Use this when you need up-to-date information that you don't have in your training data.",
+                "description": "Search the web for current information. CRITICAL: When searching for songs by a specific artist, you MUST search for the artist's Wikipedia discography page (e.g., 'Artist Name discography Wikipedia'). Only suggest tracks that appear on the artist's official Wikipedia discography page. Use this tool to verify track names, artist names, and that tracks actually exist.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "The search query to look up on the web"
+                            "description": "The search query. For artist songs, use format: 'Artist Name discography Wikipedia' to find their official discography page."
                         }
                     },
                     "required": ["query"]
@@ -153,10 +153,18 @@ class ClaudeService:
 
 BUILD MODE RULES (STRICTLY ENFORCED):
 
+WIKIPEDIA DISCOGRAPHY REQUIREMENT (MANDATORY):
+- When the user mentions a specific artist or you need to suggest songs by an artist, you MUST:
+  1. Search for the artist's Wikipedia discography page using: "Artist Name discography Wikipedia"
+  2. ONLY suggest tracks that are listed on the artist's official Wikipedia discography page
+  3. Do NOT suggest tracks from other sources or based on your training data
+  4. The Wikipedia discography page is the ONLY source of truth for an artist's songs
+
 WEB SEARCH REQUIREMENT (MANDATORY):
 - You CANNOT suggest tracks without first using the search_web tool. This is IMPOSSIBLE.
 - NEVER suggest tracks based on your training data alone - it may be outdated, incorrect, or incomplete.
 - BEFORE suggesting ANY tracks, you MUST use search_web to verify track names, artist names, and that tracks actually exist.
+- For artist-specific requests, ALWAYS search for the artist's Wikipedia discography page first
 - If web search fails to find relevant information or returns no useful results, DO NOT make up tracks.
 - Instead, tell the user: "I couldn't find verified tracks matching your request. Could you provide more specific details or try a different search?"
 - It is BETTER to tell the user you couldn't find tracks than to hallucinate fake track names.
@@ -170,9 +178,12 @@ OUTPUT FORMAT RULES:
   (No extra punctuation inside the title unless it's part of the official name.)
 
 WORKFLOW:
-1. Use search_web to research and verify tracks that match the user's request
-2. Only after web search confirms real tracks exist, suggest them in the required format
-3. If web search fails or finds nothing, inform the user honestly - do NOT invent tracks."""
+1. If user mentions a specific artist, search for: "Artist Name discography Wikipedia"
+2. Review the Wikipedia discography page to find appropriate tracks
+3. Only suggest tracks that appear on the official Wikipedia discography page
+4. Use search_web to verify any other tracks that match the user's request
+5. Only after web search confirms real tracks exist, suggest them in the required format
+6. If web search fails or finds nothing, inform the user honestly - do NOT invent tracks."""
             
             # Make the API call with tools
             api_params = {
