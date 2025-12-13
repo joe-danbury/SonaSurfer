@@ -2,6 +2,48 @@ import { useState, useEffect } from 'react';
 
 const API_BASE_URL = 'http://localhost:8000';
 
+// Skeleton UI for playlist while loading
+function PlaylistSkeleton() {
+  return (
+    <div className="p-8 flex gap-8 animate-pulse">
+      {/* Left side - Cover and Tracklist skeleton */}
+      <div className="flex-shrink-0 flex flex-col">
+        {/* Cover skeleton */}
+        <div className="mb-6 flex justify-center">
+          <div className="w-64 h-64 bg-gray-200 rounded-lg"></div>
+        </div>
+
+        {/* Tracklist skeleton */}
+        <div className="space-y-2">
+          <div className="h-6 w-20 bg-gray-200 rounded mb-4"></div>
+          <div className="space-y-1">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="flex items-center gap-3 p-3">
+                <div className="w-10 h-10 bg-gray-200 rounded flex-shrink-0"></div>
+                <div className="flex-1">
+                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                  <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Right side - Name and Description skeleton */}
+      <div className="flex-1 flex flex-col">
+        <div className="mb-4">
+          <div className="h-9 bg-gray-200 rounded w-2/3"></div>
+        </div>
+        <div className="mb-6">
+          <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
+          <div className="h-4 bg-gray-200 rounded w-4/5"></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Simple loading indicator with cycling phrases and bouncing dots
 function LoadingIndicator() {
   const phrases = [
@@ -568,86 +610,90 @@ function App() {
 
       {/* Right half - Playlist Display */}
       <div className="w-1/2 bg-white flex flex-col h-screen overflow-y-auto">
-        <div className="p-8 flex gap-8">
-          {/* Left side - Cover and Tracklist */}
-          <div className="flex-shrink-0 flex flex-col">
-            {/* Playlist Cover */}
-            <div className="mb-6 flex justify-center">
-              {playlist?.images?.[0]?.url ? (
-                <img 
-                  src={playlist.images[0].url} 
-                  alt={playlist.name}
-                  className="w-64 h-64 rounded-lg shadow-lg object-cover"
-                />
-              ) : (
-                <div className="w-64 h-64 bg-gray-200 rounded-lg shadow-lg flex items-center justify-center">
-                  <svg
-                    className="w-24 h-24 text-gray-400"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </div>
-              )}
-            </div>
-
-            {/* Tracklist */}
-            <div className="space-y-2">
-              <h3 className="text-lg font-semibold text-gray-700 mb-4">Tracks</h3>
-              <div className="space-y-1">
-                {playlist?.tracks?.items && playlist.tracks.items.length > 0 ? (
-                  playlist.tracks.items.map((item, index) => (
-                    <div key={index} className="flex items-center gap-3 p-3 rounded hover:bg-gray-100 transition-colors">
-                      {item.track?.album?.images?.[2]?.url ? (
-                        <img 
-                          src={item.track.album.images[2].url} 
-                          alt={item.track.name}
-                          className="w-10 h-10 rounded flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 bg-gray-300 rounded flex-shrink-0"></div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-gray-800 text-sm font-medium">{item.track.name}</p>
-                        <p className="text-gray-500 text-xs">{item.track.artists.map(a => a.name).join(', ')}</p>
-                      </div>
-                    </div>
-                  ))
+        {!playlist ? (
+          <PlaylistSkeleton />
+        ) : (
+          <div className="p-8 flex gap-8">
+            {/* Left side - Cover and Tracklist */}
+            <div className="flex-shrink-0 flex flex-col">
+              {/* Playlist Cover */}
+              <div className="mb-6 flex justify-center">
+                {playlist?.images?.[0]?.url ? (
+                  <img 
+                    src={playlist.images[0].url} 
+                    alt={playlist.name}
+                    className="w-64 h-64 rounded-lg shadow-lg object-cover"
+                  />
                 ) : (
-                  <div className="flex items-center gap-3 p-3 rounded hover:bg-gray-100 transition-colors">
-                    <div className="w-10 h-10 bg-gray-300 rounded flex-shrink-0"></div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-gray-400 text-sm">No tracks yet</p>
-                      <p className="text-gray-500 text-xs">Tracks will appear here</p>
-                    </div>
+                  <div className="w-64 h-64 bg-gray-200 rounded-lg shadow-lg flex items-center justify-center">
+                    <svg
+                      className="w-24 h-24 text-gray-400"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
                   </div>
                 )}
               </div>
+
+              {/* Tracklist */}
+              <div className="space-y-2">
+                <h3 className="text-lg font-semibold text-gray-700 mb-4">Tracks</h3>
+                <div className="space-y-1">
+                  {playlist?.tracks?.items && playlist.tracks.items.length > 0 ? (
+                    playlist.tracks.items.map((item, index) => (
+                      <div key={index} className="flex items-center gap-3 p-3 rounded hover:bg-gray-100 transition-colors">
+                        {item.track?.album?.images?.[2]?.url ? (
+                          <img 
+                            src={item.track.album.images[2].url} 
+                            alt={item.track.name}
+                            className="w-10 h-10 rounded flex-shrink-0"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 bg-gray-300 rounded flex-shrink-0"></div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-gray-800 text-sm font-medium">{item.track.name}</p>
+                          <p className="text-gray-500 text-xs">{item.track.artists.map(a => a.name).join(', ')}</p>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="flex items-center gap-3 p-3 rounded hover:bg-gray-100 transition-colors">
+                      <div className="w-10 h-10 bg-gray-300 rounded flex-shrink-0"></div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-gray-400 text-sm">No tracks yet</p>
+                        <p className="text-gray-500 text-xs">Tracks will appear here</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Right side - Playlist Name and Description */}
+            <div className="flex-1 flex flex-col">
+              {/* Playlist Name */}
+              <div className="mb-4">
+                <h2 className="text-3xl font-bold text-gray-800">
+                  {playlist?.name || 'My Playlist'}
+                </h2>
+              </div>
+
+              {/* Description */}
+              <div className="mb-6">
+                <p className="text-gray-500 text-sm">
+                  {playlist?.description || 'Playlist description will appear here...'}
+                </p>
+              </div>
             </div>
           </div>
-
-          {/* Right side - Playlist Name and Description */}
-          <div className="flex-1 flex flex-col">
-            {/* Playlist Name */}
-            <div className="mb-4">
-              <h2 className="text-3xl font-bold text-gray-800">
-                {playlist?.name || 'My Playlist'}
-              </h2>
-            </div>
-
-            {/* Description */}
-            <div className="mb-6">
-              <p className="text-gray-500 text-sm">
-                {playlist?.description || 'Playlist description will appear here...'}
-              </p>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Playlist Creation Form Modal */}
