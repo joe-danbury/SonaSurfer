@@ -203,6 +203,8 @@ async def chat(
         
         # Store extracted songs from the conversation
         extracted_songs = []
+        failed_songs = []  # Track songs that failed Spotify validation
+        already_extracted_songs = set()  # Track (track, artist) tuples to avoid duplicates
         
         # Get access token if playlist_id is provided
         access_token = None
@@ -212,42 +214,90 @@ async def chat(
             else:
                 access_token = authorization
         
-        # Callback function to handle extracted songs
+        # Callback function to handle extracted songs (called one-by-one)
         def on_songs_extracted(songs: List[Dict[str, str]]):
-            """Callback when songs are extracted from Claude's response"""
-            extracted_songs.extend(songs)
-            logger.info(f"🎵 Songs extracted so far: {len(extracted_songs)} total")
+            """Callback when songs are extracted from Claude's response (one song at a time)"""
+            if not songs or len(songs) == 0:
+                return
             
-            # Automatically search and add tracks to playlist if playlist_id and access_token are provided
-            if playlist_id and access_token and songs:
+            song = songs[0]  # Should only be one song at a time now
+            extracted_songs.append(song)
+            
+            # Validate and add to playlist immediately if playlist_id and access_token are provided
+            if playlist_id and access_token:
                 try:
                     spotify_service = get_spotify_service()
-                    track_uris = []
                     
-                    for song in songs:
-                        track_uri = spotify_service.search_track(
-                            access_token=access_token,
-                            track_name=song.get("track", ""),
-                            artist_name=song.get("artist")
-                        )
-                        if track_uri:
-                            track_uris.append(track_uri)
+                    track_uri = spotify_service.search_track(
+                        access_token=access_token,
+                        track_name=song.get("track", ""),
+                        artist_name=song.get("artist")
+                    )
                     
-                    if track_uris:
+                    if track_uri:
+                        # Add track immediately (one at a time)
                         spotify_service.add_tracks_to_playlist(
                             access_token=access_token,
                             playlist_id=playlist_id,
-                            track_uris=track_uris
+                            track_uris=[track_uri]
                         )
-                        logger.info(f"✅ Added {len(track_uris)} track(s) to playlist {playlist_id}")
+                        logger.info(f"✅ Added track to playlist: {song.get('track')} by {song.get('artist')}")
+                    else:
+                        # Track validation failed - add to failed list
+                        failed_songs.append(song)
+                        # Mark as already extracted so we don't try it again
+                        track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
+                        already_extracted_songs.add(track_key)
+                        logger.warning(f"❌ Track not found on Spotify: {song.get('track')} by {song.get('artist')}")
                 except Exception as e:
-                    logger.error(f"❌ Failed to add tracks to playlist: {str(e)}")
+                    logger.error(f"❌ Failed to add track to playlist: {str(e)}")
+                    failed_songs.append(song)
+                    # Mark as already extracted so we don't try it again
+                    track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
+                    already_extracted_songs.add(track_key)
+            else:
+                logger.info(f"🎵 Song extracted (no playlist context): {song.get('track')} by {song.get('artist')}")
         
         # Get response from Claude (with extraction callback)
-        response_text = service.chat(messages=messages, system=request.system, on_songs_extracted=on_songs_extracted)
+        response_text = service.chat(
+            messages=messages, 
+            system=request.system, 
+            on_songs_extracted=on_songs_extracted,
+            already_extracted_songs=already_extracted_songs
+        )
+        
+        # If there are failed songs, make a follow-up call to Claude to find alternatives
+        if failed_songs and playlist_id and access_token:
+            logger.info(f"⚠️ {len(failed_songs)} track(s) failed validation. Asking Claude to find alternatives.")
+            
+            # Build message asking Claude to find alternatives
+            failed_tracks_text = "\n".join([f"- {song.get('track')} by {song.get('artist')}" for song in failed_songs])
+            follow_up_message = f"""The following tracks could not be found on Spotify (they may not exist, have incorrect names, or incorrect artist information):
+
+{failed_tracks_text}
+
+Please search for alternative tracks that match the same musical style/genre and add them to the playlist instead."""
+            
+            # Make follow-up call
+            follow_up_messages = messages + [
+                {"role": "assistant", "content": response_text},
+                {"role": "user", "content": follow_up_message}
+            ]
+            
+            follow_up_response = service.chat(
+                messages=follow_up_messages,
+                system=request.system,
+                on_songs_extracted=on_songs_extracted,
+                already_extracted_songs=already_extracted_songs
+            )
+            
+            # Combine responses
+            response_text = response_text + "\n\n" + follow_up_response
         
         logger.info(f"📤 Sending response to client (length: {len(response_text)} chars)")
         logger.info(f"🎵 Total songs extracted during conversation: {len(extracted_songs)}")
+        if failed_songs:
+            logger.info(f"❌ Songs that failed validation: {len(failed_songs)}")
         
         return ChatResponse(message=response_text)
     except ValueError as e:

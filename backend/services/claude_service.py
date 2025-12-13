@@ -1,6 +1,6 @@
 import os
 from anthropic import Anthropic
-from typing import List, Dict, Optional, Callable
+from typing import List, Dict, Optional, Callable, Set, Tuple
 import yaml
 import httpx
 import json
@@ -119,7 +119,7 @@ class ClaudeService:
             logger.error(f"❌ Web search error for query '{query}': {str(e)}")
             return f"Error performing web search: {str(e)}"
     
-    def chat(self, messages: List[Dict[str, str]], system: Optional[str] = None, on_songs_extracted: Optional[Callable[[List[Dict[str, str]]], None]] = None) -> str:
+    def chat(self, messages: List[Dict[str, str]], system: Optional[str] = None, on_songs_extracted: Optional[Callable[[List[Dict[str, str]]], None]] = None, already_extracted_songs: Optional[Set[Tuple[str, str]]] = None) -> str:
         """
         Send a chat message to Claude and get a response.
         Handles tool calls automatically.
@@ -199,6 +199,10 @@ BUILD MODE OUTPUT RULES (must follow):
             accumulated_text = ""  # Accumulate all text responses across iterations
             current_mode = "undefined"  # Start as undefined - Claude MUST call set_mode to set the mode
             
+            # Track already extracted songs to avoid duplicates (using (track, artist) tuples as keys)
+            if already_extracted_songs is None:
+                already_extracted_songs = set()
+            
             while iteration < max_iterations:
                 logger.info(f"📤 Sending request to Claude (iteration {iteration + 1})")
                 response = self.client.messages.create(**api_params)
@@ -225,15 +229,25 @@ BUILD MODE OUTPUT RULES (must follow):
                     accumulated_text += text_content
                     logger.info(f"💬 Claude response: {text_content[:200]}{'...' if len(text_content) > 200 else ''}")
                     
-                    # Extract songs from this response ONLY if in 'build' mode
+                    # Extract songs incrementally from accumulated text ONLY if in 'build' mode
                     if on_songs_extracted and current_mode == "build":
                         try:
                             from services.extraction_service import ExtractionService
                             extraction_service = ExtractionService()
-                            songs = extraction_service.extract_songs(text_content)
-                            if songs:
-                                logger.info(f"🎵 Extracted {len(songs)} song(s) from Claude response (build mode)")
-                                on_songs_extracted(songs)
+                            
+                            # Extract new songs from accumulated text (one-by-one style)
+                            new_songs = extraction_service.extract_new_songs_incremental(accumulated_text, already_extracted_songs)
+                            
+                            if new_songs:
+                                # Add newly extracted songs to the tracking set
+                                for song in new_songs:
+                                    track_key = (song["track"].lower().strip(), song["artist"].lower().strip())
+                                    already_extracted_songs.add(track_key)
+                                
+                                logger.info(f"🎵 Extracted {len(new_songs)} new song(s) from Claude response (build mode)")
+                                # Call callback with new songs one-by-one for immediate validation
+                                for song in new_songs:
+                                    on_songs_extracted([song])  # Pass as list with single song
                         except Exception as e:
                             logger.warning(f"⚠️ Failed to extract songs: {str(e)}")
                     elif current_mode == "chat":

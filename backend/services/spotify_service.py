@@ -126,27 +126,38 @@ class SpotifyService:
             track_name_normalized = track_name.lower().strip()
             artist_name_normalized = artist_name.lower().strip() if artist_name else None
             
-            # If we have an artist name, look for exact match first
+            # If we have an artist name, require exact artist match with flexible track matching
             if artist_name_normalized:
                 for track in tracks:
                     track_name_match = track['name'].lower().strip()
-                    # Check if any artist matches
+                    # Check if any artist matches EXACTLY
                     track_artists = [artist['name'].lower().strip() for artist in track['artists']]
                     
-                    # Exact match on both track name and artist name
-                    if track_name_match == track_name_normalized and artist_name_normalized in track_artists:
+                    # REQUIRE exact artist match
+                    if artist_name_normalized not in track_artists:
+                        continue  # Skip this track if artist doesn't match exactly
+                    
+                    # If artist matches, check if track name is similar (flexible matching)
+                    # Allow substring match or close similarity
+                    if (track_name_normalized in track_name_match or 
+                        track_name_match in track_name_normalized or
+                        track_name_match == track_name_normalized):
                         track_uri = track['uri']
-                        logger.info(f"✅ Found exact match: {track['name']} by {track['artists'][0]['name']} - URI: {track_uri}")
+                        logger.info(f"✅ Found match (exact artist, flexible track): {track['name']} by {track['artists'][0]['name']} - URI: {track_uri}")
                         return track_uri
                 
-                # No exact match found, log and fall through to first result
-                logger.info(f"ℹ️ No exact match found for '{track_name}' by '{artist_name}', using best match")
+                # No match found with exact artist requirement
+                logger.warning(f"⚠️ No track found with exact artist match for '{track_name}' by '{artist_name}'")
+                return None
             
-            # Fallback: use first result (Spotify's best match)
-            track = tracks[0]
-            track_uri = track['uri']
-            logger.info(f"✅ Found track (best match): {track['name']} by {track['artists'][0]['name']} - URI: {track_uri}")
-            return track_uri
+            # If no artist name provided, use first result as fallback
+            if tracks:
+                track = tracks[0]
+                track_uri = track['uri']
+                logger.info(f"✅ Found track (no artist specified): {track['name']} by {track['artists'][0]['name']} - URI: {track_uri}")
+                return track_uri
+            
+            return None
                 
         except Exception as e:
             logger.error(f"❌ Error searching for track '{track_name}': {str(e)}")
