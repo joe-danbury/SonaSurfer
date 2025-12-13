@@ -318,11 +318,9 @@ WORKFLOW:
                         logger.info(f"🎵 Playlist complete - {len(successfully_added_songs)} track(s) successfully added")
                     return
                 
-                # CRITICAL: If we have successfully added songs (3+), STOP the tool call loop
-                # Don't let Claude keep searching/verifying - the playlist is good enough
-                if successfully_added_songs and len(successfully_added_songs) >= 3:
-                    logger.info(f"🛑 Stopping tool loop - {len(successfully_added_songs)} track(s) already added to playlist. Skipping further searches.")
-                    # Yield a final message to let the user know
+                # If we have enough songs (10+), stop the tool call loop
+                if successfully_added_songs and len(successfully_added_songs) >= 10:
+                    logger.info(f"🛑 Stopping tool loop - {len(successfully_added_songs)} track(s) already added to playlist.")
                     yield {"type": "new_bubble"}
                     yield {"type": "text", "content": f"\n\nYour playlist now has {len(successfully_added_songs)} tracks! Let me know if you'd like me to add more."}
                     return
@@ -367,6 +365,26 @@ WORKFLOW:
                     "role": "user",
                     "content": tool_results
                 })
+                
+                # Inject context about songs already added to the playlist
+                # This helps Claude know what NOT to suggest again
+                if successfully_added_songs and len(successfully_added_songs) > 0:
+                    added_songs_list = "\n".join([
+                        f"- \"{song['track']}\" by {song['artist']}" 
+                        for song in successfully_added_songs
+                    ])
+                    context_message = f"""IMPORTANT CONTEXT: The following {len(successfully_added_songs)} track(s) have ALREADY been added to the playlist. Do NOT suggest these again:
+
+{added_songs_list}
+
+Please suggest DIFFERENT tracks that are not in the list above."""
+                    
+                    # Add as a follow-up user message
+                    api_messages.append({
+                        "role": "user", 
+                        "content": context_message
+                    })
+                    logger.info(f"📝 Injected context: {len(successfully_added_songs)} track(s) already in playlist")
                 
                 iteration += 1
                 logger.info(f"🔄 Continuing conversation with tool results (iteration {iteration})")
