@@ -6,6 +6,7 @@ import httpx
 import json
 import logging
 from urllib.parse import quote_plus
+from bs4 import BeautifulSoup
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -49,13 +50,13 @@ class ClaudeService:
     
     def search_web(self, query: str) -> str:
         """
-        Search the web using Brave Search API and return results.
+        Search the web using Brave Search API, fetch page content, and return results with actual content.
         
         Args:
             query: Search query string
         
         Returns:
-            Formatted search results as a string
+            Formatted search results with page content as a string
         """
         logger.info(f"🔍 Web search requested: {query}")
         try:
@@ -91,11 +92,17 @@ class ClaudeService:
                     url = result.get("url", "").strip()
                     
                     if url and title:
-                        results.append(f"Title: {title}\nURL: {url}")
+                        # Fetch the actual page content
+                        page_content = self._fetch_page_content(url)
+                        if page_content:
+                            results.append(f"Title: {title}\nURL: {url}\nContent:\n{page_content}")
+                        else:
+                            # Fallback to just title and URL if content fetch fails
+                            results.append(f"Title: {title}\nURL: {url}\n(Content unavailable)")
                 
                 if results:
-                    logger.info(f"✅ Web search completed. Found {len(results)} results for: {query}")
-                    return "\n\n".join(results)
+                    logger.info(f"✅ Web search completed. Found {len(results)} results with content for: {query}")
+                    return "\n\n---\n\n".join(results)
                 else:
                     logger.warning(f"⚠️ Web search completed but no results parsed for: {query}")
                     return f"Search performed for: {query}\n(Results parsing may need improvement)"
@@ -103,6 +110,52 @@ class ClaudeService:
         except Exception as e:
             logger.error(f"❌ Web search error for query '{query}': {str(e)}")
             return f"Error performing web search: {str(e)}"
+    
+    def _fetch_page_content(self, url: str, max_length: int = 10000) -> Optional[str]:
+        """
+        Fetch and extract text content from a web page.
+        
+        Args:
+            url: URL of the page to fetch
+            max_length: Maximum length of content to return (to avoid token limits)
+        
+        Returns:
+            Extracted text content from the page, or None if fetch fails
+        """
+        try:
+            # Set a reasonable timeout and user agent
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            }
+            
+            with httpx.Client(timeout=15.0, headers=headers, follow_redirects=True) as client:
+                response = client.get(url)
+                response.raise_for_status()
+                
+                # Parse HTML and extract text
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Remove script and style elements
+                for script in soup(["script", "style", "nav", "footer", "header"]):
+                    script.decompose()
+                
+                # Get text content
+                text = soup.get_text(separator='\n', strip=True)
+                
+                # Clean up excessive whitespace
+                lines = [line.strip() for line in text.split('\n') if line.strip()]
+                text = '\n'.join(lines)
+                
+                # Limit length to avoid token limits
+                if len(text) > max_length:
+                    text = text[:max_length] + "... (content truncated)"
+                
+                logger.info(f"📄 Fetched {len(text)} chars from {url}")
+                return text
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to fetch content from {url}: {str(e)}")
+            return None
     
     def chat_stream(self, messages: List[Dict[str, str]], system: Optional[str] = None, on_songs_extracted: Optional[Callable[[List[Dict[str, str]]], None]] = None, already_extracted_songs: Optional[Set[Tuple[str, str]]] = None):
         """

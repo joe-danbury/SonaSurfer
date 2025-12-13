@@ -5,3 +5,4 @@ pyyaml==6.0.1
 anthropic==0.39.0
 spotipy==2.23.0
 httpx==0.25.2
+beautifulsoup4==4.12.2
