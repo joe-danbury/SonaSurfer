@@ -282,11 +282,11 @@ function App() {
     // Chat endpoint - backend will auto-create playlist if needed
     let chatUrl = `${API_BASE_URL}/chat`;
 
-    // Build headers
+    // Build headers - always send auth if we have a token
     const headers = {
       'Content-Type': 'application/json',
     };
-    if (accessToken && playlist?.id) {
+    if (accessToken) {
       headers['Authorization'] = `Bearer ${accessToken}`;
     }
 

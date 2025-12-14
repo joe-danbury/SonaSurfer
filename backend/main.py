@@ -217,8 +217,11 @@ async def chat(
                 else:
                     access_token = authorization
             
+            # Initialize playlist_id variable in local scope
+            current_playlist_id = playlist_id
+            
             # Auto-create playlist if not provided
-            if not playlist_id and access_token:
+            if not current_playlist_id and access_token:
                 spotify_service = get_spotify_service()
                 
                 # Extract playlist name from user's message
@@ -231,8 +234,8 @@ async def chat(
                     description="Built by an AI agent inside SonaSurfer.",
                     public=False
                 )
-                playlist_id = playlist['id']
-                logger.info(f"📋 Auto-created playlist: {playlist_name} (ID: {playlist_id})")
+                current_playlist_id = playlist['id']
+                logger.info(f"📋 Auto-created playlist: {playlist_name} (ID: {current_playlist_id})")
                 
                 # Send playlist info to frontend immediately
                 yield f"data: {json.dumps({'type': 'playlist_created', 'playlist': playlist})}\n\n"
@@ -297,7 +300,7 @@ async def chat(
                             yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
                 
                 # After streaming completes, process any extracted songs immediately
-                if songs_this_iteration and playlist_id and access_token:
+                if songs_this_iteration and current_playlist_id and access_token:
                     for song in songs_this_iteration:
                         # Verify with Spotify synchronously
                         track_result = spotify_service.search_track(
@@ -313,7 +316,7 @@ async def chat(
                             # Add track to playlist
                             spotify_service.add_tracks_to_playlist(
                                 access_token=access_token,
-                                playlist_id=playlist_id,
+                                playlist_id=current_playlist_id,
                                 track_uris=[track_uri]
                             )
                             logger.info(f"✅ Added track to playlist: {song.get('track')} by {song.get('artist')}")
@@ -326,7 +329,7 @@ async def chat(
                             # Fetch updated playlist details (including cover art)
                             updated_playlist = spotify_service.get_playlist(
                                 access_token=access_token,
-                                playlist_id=playlist_id
+                                playlist_id=current_playlist_id
                             )
                             
                             # Send track_added event to frontend
