@@ -149,14 +149,7 @@ function App() {
   const [inputValue, setInputValue] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [accessToken, setAccessToken] = useState(null);
-  const [showPlaylistForm, setShowPlaylistForm] = useState(false);
   const [playlist, setPlaylist] = useState(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    public: true
-  });
-  const [isCreating, setIsCreating] = useState(false);
   const [isLoadingResponse, setIsLoadingResponse] = useState(false);
   // 'idle' = no request, 'initial' = showing first bubble, 'processing' = tool calls in progress (show loader)
   const [processingPhase, setProcessingPhase] = useState('idle');
@@ -286,12 +279,8 @@ function App() {
         content: msg.text
       }));
 
-    // Build request URL with playlist_id if available
-    // TODO: Move playlist_id management to backend later
+    // Chat endpoint - backend will auto-create playlist if needed
     let chatUrl = `${API_BASE_URL}/chat`;
-    if (playlist?.id) {
-      chatUrl += `?playlist_id=${playlist.id}`;
-    }
 
     // Build headers
     const headers = {
@@ -364,6 +353,10 @@ function App() {
                   } else if (bubbleCount >= 2) {
                     setProcessingPhase('idle'); // Hide loader when summary starts
                   }
+                } else if (data.type === 'playlist_created') {
+                  // Backend auto-created a playlist
+                  console.log('📋 Playlist created:', data.playlist);
+                  setPlaylist(data.playlist);
                 } else if (data.type === 'chunk') {
                   accumulatedText += data.content;
                   
@@ -534,66 +527,6 @@ function App() {
     }
   };
 
-  const handleCreatePlaylist = () => {
-    setShowPlaylistForm(true);
-  };
-
-  const handleCloseForm = () => {
-    setShowPlaylistForm(false);
-    setFormData({ name: '', description: '', public: true });
-  };
-
-  const handleFormChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
-  };
-
-  const handleFormSubmit = async (e) => {
-    e.preventDefault();
-    if (!formData.name.trim()) {
-      return;
-    }
-
-    setIsCreating(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/playlists`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({
-          name: formData.name,
-          description: formData.description || null,
-          public: formData.public
-        })
-      });
-
-      if (response.ok) {
-        const playlistData = await response.json();
-        setPlaylist(playlistData);
-        setShowPlaylistForm(false);
-        setFormData({ name: '', description: '', public: true });
-      } else {
-        const errorData = await response.json();
-        setMessages([...messages, {
-          text: `Failed to create playlist: ${errorData.detail || 'Unknown error'}`,
-          sender: 'system'
-        }]);
-      }
-    } catch (error) {
-      setMessages([...messages, {
-        text: `Error creating playlist: ${error.message}`,
-        sender: 'system'
-      }]);
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-green-500 flex relative">
       {/* Top Right - Login/Logout Button */}
@@ -616,7 +549,7 @@ function App() {
       </div>
 
       {/* Left half - Chat Window */}
-      <div className={`w-1/2 flex flex-col h-screen ${showPlaylistForm ? 'blur-sm pointer-events-none' : ''}`}>
+      <div className="w-1/2 flex flex-col h-screen">
         {/* Header */}
         <div className="border-b border-white/20 p-4">
           <h1 className="text-xl font-bold text-white">SonaSurfer 🎵</h1>
@@ -641,17 +574,9 @@ function App() {
           ) : messages.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
-                <p className="text-white/70 text-lg mb-4">
-                  Start a conversation to build your playlist...
+                <p className="text-white/70 text-lg">
+                  Ask me to create a playlist and I'll build it for you...
                 </p>
-                {!playlist && (
-                  <button
-                    onClick={handleCreatePlaylist}
-                    className="px-6 py-3 bg-white text-green-500 rounded-lg hover:bg-white/90 transition-colors font-semibold"
-                  >
-                    Create Playlist
-                  </button>
-                )}
               </div>
             </div>
           ) : (
@@ -795,93 +720,6 @@ function App() {
         )}
       </div>
 
-      {/* Playlist Creation Form Modal */}
-      {showPlaylistForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-md mx-4">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-800">Create New Playlist</h2>
-              <button
-                onClick={handleCloseForm}
-                className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
-                disabled={isCreating}
-              >
-                ×
-              </button>
-            </div>
-            
-            <form onSubmit={handleFormSubmit} className="space-y-4" autoComplete="off">
-              <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
-                  Playlist Name *
-                </label>
-                <input
-                  type="text"
-                  id="name"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleFormChange}
-                  required
-                  disabled={isCreating}
-                  autoComplete="off"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
-                  placeholder="My Awesome Playlist"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
-                  Description
-                </label>
-                <textarea
-                  id="description"
-                  name="description"
-                  value={formData.description}
-                  onChange={handleFormChange}
-                  disabled={isCreating}
-                  rows={3}
-                  autoComplete="off"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
-                  placeholder="Describe your playlist..."
-                />
-              </div>
-
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="public"
-                  name="public"
-                  checked={formData.public}
-                  onChange={handleFormChange}
-                  disabled={isCreating}
-                  className="w-4 h-4 text-green-500 border-gray-300 rounded focus:ring-green-500 disabled:opacity-50"
-                />
-                <label htmlFor="public" className="ml-2 text-sm text-gray-700">
-                  Make playlist public
-                </label>
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={handleCloseForm}
-                  disabled={isCreating}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isCreating || !formData.name.trim()}
-                  className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
-                >
-                  {isCreating ? 'Creating...' : 'Create'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

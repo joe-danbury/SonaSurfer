@@ -209,13 +209,33 @@ async def chat(
             successfully_added_songs = []  # Track songs that were successfully added to playlist
             failed_songs = []  # Track songs that failed Spotify validation
             
-            # Get access token if playlist_id is provided
+            # Get access token from authorization header
             access_token = None
-            if playlist_id and authorization:
+            if authorization:
                 if authorization.startswith("Bearer "):
                     access_token = authorization.replace("Bearer ", "")
                 else:
                     access_token = authorization
+            
+            # Auto-create playlist if not provided
+            if not playlist_id and access_token:
+                spotify_service = get_spotify_service()
+                
+                # Extract playlist name from user's message
+                playlist_name = service.extract_playlist_name(last_user_message)
+                
+                # Create playlist on Spotify (private by default)
+                playlist = spotify_service.create_playlist(
+                    access_token=access_token,
+                    name=playlist_name,
+                    description="Built by an AI agent inside SonaSurfer.",
+                    public=False
+                )
+                playlist_id = playlist['id']
+                logger.info(f"📋 Auto-created playlist: {playlist_name} (ID: {playlist_id})")
+                
+                # Send playlist info to frontend immediately
+                yield f"data: {json.dumps({'type': 'playlist_created', 'playlist': playlist})}\n\n"
             
             # Track songs extracted in current iteration
             songs_this_iteration = []

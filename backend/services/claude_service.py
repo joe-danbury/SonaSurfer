@@ -48,6 +48,47 @@ class ClaudeService:
             }
         ]
     
+    def extract_playlist_name(self, user_message: str) -> str:
+        """
+        Extract a friendly playlist name from the user's message.
+        Uses Claude with a simple prompt to identify the genre/theme.
+        
+        Args:
+            user_message: The user's request (e.g., "Create me a yacht rock playlist")
+        
+        Returns:
+            A friendly playlist name (e.g., "Claude's yacht rock playlist")
+        """
+        try:
+            prompt = f"""Extract the playlist theme/genre from this user message and format it as a short, friendly playlist name.
+
+User message: "{user_message}"
+
+Respond with ONLY the theme/genre words (2-4 words max), no extra text. Examples:
+- "Create me a yacht rock playlist" → "yacht rock"
+- "Make a chill lo-fi playlist" → "chill lo-fi"
+- "I want jazz music" → "jazz"
+- "upbeat workout songs please" → "upbeat workout"
+
+Theme/genre:"""
+
+            response = self.client.messages.create(
+                model="claude-3-haiku-20240307",  # Use faster, cheaper model for this
+                max_tokens=50,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            theme = response.content[0].text.strip().strip('"').strip("'")
+            playlist_name = f"Claude's {theme} playlist"
+            
+            logger.info(f"📝 Extracted playlist name: {playlist_name}")
+            return playlist_name
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to extract playlist name: {str(e)}")
+            # Fallback to generic name
+            return "Claude's playlist"
+    
     def search_web(self, query: str) -> str:
         """
         Search the web using Brave Search API, fetch page content, and return results with actual content.
