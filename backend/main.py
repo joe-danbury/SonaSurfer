@@ -8,7 +8,6 @@ import secrets
 import os
 import logging
 import json
-import asyncio
 
 # Configure logging
 logging.basicConfig(
@@ -206,9 +205,9 @@ async def chat(
             
             # Store extracted songs from the conversation
             extracted_songs = []
-            failed_songs = []  # Track songs that failed Spotify validation
             already_extracted_songs = set()  # Track (track, artist) tuples to avoid duplicates
             successfully_added_songs = []  # Track songs that were successfully added to playlist
+            failed_songs = []  # Track songs that failed Spotify validation
             
             # Get access token if playlist_id is provided
             access_token = None
@@ -218,57 +217,10 @@ async def chat(
                 else:
                     access_token = authorization
             
-            # Track pending async tasks for parallel processing
-            pending_tasks = []
+            # Track songs extracted in current iteration
+            songs_this_iteration = []
             
-            async def process_song_async(song: Dict[str, str]):
-                """Process a single song asynchronously"""
-                try:
-                    spotify_service = get_spotify_service()
-                    
-                    # Search for track on Spotify (returns URI + full track data)
-                    track_result = await asyncio.to_thread(
-                        spotify_service.search_track,
-                        access_token=access_token,
-                        track_name=song.get("track", ""),
-                        artist_name=song.get("artist")
-                    )
-                    
-                    if track_result:
-                        track_uri = track_result["uri"]
-                        track_data = track_result["track_data"]
-                        
-                        # Add track to playlist
-                        await asyncio.to_thread(
-                            spotify_service.add_tracks_to_playlist,
-                            access_token=access_token,
-                            playlist_id=playlist_id,
-                            track_uris=[track_uri]
-                        )
-                        logger.info(f"✅ Added track to playlist: {song.get('track')} by {song.get('artist')}")
-                        
-                        # Mark as extracted and added
-                        track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
-                        already_extracted_songs.add(track_key)
-                        successfully_added_songs.append(song)
-                        
-                        return {"success": True, "song": song, "track_data": track_data}
-                    else:
-                        # Track not found
-                        failed_songs.append(song)
-                        track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
-                        already_extracted_songs.add(track_key)
-                        logger.warning(f"❌ Track not found on Spotify: {song.get('track')} by {song.get('artist')}")
-                        return {"success": False, "song": song}
-                        
-                except Exception as e:
-                    logger.error(f"❌ Failed to add track to playlist: {str(e)}")
-                    failed_songs.append(song)
-                    track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
-                    already_extracted_songs.add(track_key)
-                    return {"success": False, "song": song}
-            
-            # Callback function to handle extracted songs (now creates async tasks)
+            # Callback function to collect extracted songs
             def on_songs_extracted(songs: List[Dict[str, str]]):
                 """Callback when songs are extracted from Claude's response"""
                 if not songs or len(songs) == 0:
@@ -276,99 +228,29 @@ async def chat(
                 
                 for song in songs:
                     extracted_songs.append(song)
-                    
-                    # If we have playlist context, create async task for parallel processing
-                    if playlist_id and access_token:
-                        task = asyncio.create_task(process_song_async(song))
-                        pending_tasks.append(task)
-                    else:
-                        logger.info(f"🎵 Song extracted (no playlist context): {song.get('track')} by {song.get('artist')}")
+                    songs_this_iteration.append(song)
+                    logger.info(f"🎵 Song extracted: {song.get('track')} by {song.get('artist')}")
             
-            # Stream response from Claude (with extraction callback)
-            accumulated_response = ""
+            # Iterative loop: continue until we have 10 successful songs
+            max_songs = 10
+            conversation_messages = messages.copy()
+            max_iterations = 20  # Prevent infinite loops
+            iteration = 0
             
-            for chunk in service.chat_stream(
-                messages=messages, 
-                system=request.system, 
-                on_songs_extracted=on_songs_extracted,
-                already_extracted_songs=already_extracted_songs,
-                successfully_added_songs=successfully_added_songs
-            ):
-                # Handle different chunk types from chat_stream
-                if isinstance(chunk, dict):
-                    if chunk.get("type") == "new_bubble":
-                        # Signal frontend to create a new message bubble
-                        yield f"data: {json.dumps({'type': 'new_bubble'})}\n\n"
-                    elif chunk.get("type") == "text":
-                        content = chunk.get("content", "")
-                        accumulated_response += content
-                        yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
-                    elif chunk.get("type") == "error":
-                        yield f"data: {json.dumps({'type': 'error', 'content': chunk.get('content', 'Unknown error')})}\n\n"
-                else:
-                    # Fallback for plain text chunks
-                    accumulated_response += chunk
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
-                
-                # Check for completed tasks (non-blocking) and yield events as they complete
-                if pending_tasks:
-                    completed = []
-                    for task in pending_tasks:
-                        if task.done():
-                            completed.append(task)
-                    
-                    for task in completed:
-                        pending_tasks.remove(task)
-                        try:
-                            result = await task
-                            if result["success"]:
-                                # Track was successfully added - send event with full track data
-                                track = result["song"]
-                                track_data = result.get("track_data", {})
-                                yield f"data: {json.dumps({'type': 'track_added', 'track': track, 'track_data': track_data})}\n\n"
-                                logger.info(f"📤 Sent track_added event: {track.get('track')} by {track.get('artist')}")
-                        except Exception as e:
-                            logger.error(f"❌ Task failed: {str(e)}")
+            spotify_service = get_spotify_service()
             
-            # Wait for all remaining pending tasks to complete
-            if pending_tasks:
-                logger.info(f"⏳ Waiting for {len(pending_tasks)} remaining task(s) to complete...")
-                results = await asyncio.gather(*pending_tasks, return_exceptions=True)
-                for result in results:
-                    if isinstance(result, Exception):
-                        logger.error(f"❌ Task failed: {str(result)}")
-                    elif isinstance(result, dict) and result.get("success"):
-                        # Track was successfully added - send event with full track data
-                        track = result["song"]
-                        track_data = result.get("track_data", {})
-                        yield f"data: {json.dumps({'type': 'track_added', 'track': track, 'track_data': track_data})}\n\n"
-                        logger.info(f"📤 Sent track_added event: {track.get('track')} by {track.get('artist')}")
-                pending_tasks.clear()
-            
-            # If there are failed songs, make a follow-up call to Claude to find alternatives
-            if failed_songs and playlist_id and access_token:
-                logger.info(f"⚠️ {len(failed_songs)} track(s) failed validation. Asking Claude to find alternatives.")
+            while len(successfully_added_songs) < max_songs and iteration < max_iterations:
+                iteration += 1
+                logger.info(f"🔄 Iteration {iteration}: {len(successfully_added_songs)}/{max_songs} songs added")
                 
-                # Build message asking Claude to find alternatives
-                failed_tracks_text = "\n".join([f"- {song.get('track')} by {song.get('artist')}" for song in failed_songs])
-                follow_up_message = f"""The following tracks could not be found on Spotify (they may not exist, have incorrect names, or incorrect artist information):
-
-{failed_tracks_text}
-
-IMPORTANT: Use search_web to find verified alternative tracks that match the same musical style/genre, and suggest them in the playlist format."""
+                # Reset songs for this iteration
+                songs_this_iteration.clear()
+                accumulated_response = ""
                 
-                # Make follow-up call
-                follow_up_messages = messages + [
-                    {"role": "assistant", "content": accumulated_response},
-                    {"role": "user", "content": follow_up_message}
-                ]
-                
-                # Send new bubble signal for follow-up response
-                yield f"data: {json.dumps({'type': 'new_bubble'})}\n\n"
-                
+                # Stream response from Claude (with extraction callback)
                 for chunk in service.chat_stream(
-                    messages=follow_up_messages,
-                    system=request.system,
+                    messages=conversation_messages, 
+                    system=request.system, 
                     on_songs_extracted=on_songs_extracted,
                     already_extracted_songs=already_extracted_songs,
                     successfully_added_songs=successfully_added_songs
@@ -376,47 +258,122 @@ IMPORTANT: Use search_web to find verified alternative tracks that match the sam
                     # Handle different chunk types from chat_stream
                     if isinstance(chunk, dict):
                         if chunk.get("type") == "new_bubble":
-                            yield f"data: {json.dumps({'type': 'new_bubble'})}\n\n"
+                            # Only show new bubble for first iteration
+                            if iteration == 1:
+                                yield f"data: {json.dumps({'type': 'new_bubble'})}\n\n"
                         elif chunk.get("type") == "text":
+                            content = chunk.get("content", "")
+                            accumulated_response += content
+                            # Only show text for first iteration (initial greeting)
+                            if iteration == 1:
+                                yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
+                        elif chunk.get("type") == "error":
+                            yield f"data: {json.dumps({'type': 'error', 'content': chunk.get('content', 'Unknown error')})}\n\n"
+                    else:
+                        # Fallback for plain text chunks
+                        accumulated_response += chunk
+                        # Only show text for first iteration
+                        if iteration == 1:
+                            yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                
+                # After streaming completes, process any extracted songs immediately
+                if songs_this_iteration and playlist_id and access_token:
+                    for song in songs_this_iteration:
+                        # Verify with Spotify synchronously
+                        track_result = spotify_service.search_track(
+                            access_token=access_token,
+                            track_name=song.get("track", ""),
+                            artist_name=song.get("artist")
+                        )
+                        
+                        if track_result:
+                            track_uri = track_result["uri"]
+                            track_data = track_result["track_data"]
+                            
+                            # Add track to playlist
+                            spotify_service.add_tracks_to_playlist(
+                                access_token=access_token,
+                                playlist_id=playlist_id,
+                                track_uris=[track_uri]
+                            )
+                            logger.info(f"✅ Added track to playlist: {song.get('track')} by {song.get('artist')}")
+                            
+                            # Mark as added
+                            track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
+                            already_extracted_songs.add(track_key)
+                            successfully_added_songs.append(song)
+                            
+                            # Send track_added event to frontend
+                            yield f"data: {json.dumps({'type': 'track_added', 'track': song, 'track_data': track_data})}\n\n"
+                            logger.info(f"📤 Sent track_added event: {song.get('track')} by {song.get('artist')}")
+                            
+                            # Inject success feedback into conversation
+                            feedback = f"✅ Added '{song.get('track')}' by {song.get('artist')} to the playlist (Track {len(successfully_added_songs)}/{max_songs}). Continue with another song."
+                            conversation_messages.append({"role": "assistant", "content": accumulated_response})
+                            conversation_messages.append({"role": "user", "content": feedback})
+                            
+                            # If we've reached the target, stop the loop
+                            if len(successfully_added_songs) >= max_songs:
+                                logger.info(f"🎉 Playlist complete with {len(successfully_added_songs)} songs!")
+                                break
+                        else:
+                            # Track not found
+                            failed_songs.append(song)
+                            track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
+                            already_extracted_songs.add(track_key)
+                            logger.warning(f"❌ Track not found on Spotify: {song.get('track')} by {song.get('artist')}")
+                            
+                            # Inject failure feedback into conversation
+                            feedback = f"❌ '{song.get('track')}' by {song.get('artist')} was not found on Spotify. Try a different song."
+                            conversation_messages.append({"role": "assistant", "content": accumulated_response})
+                            conversation_messages.append({"role": "user", "content": feedback})
+                    
+                    # Check if we're done
+                    if len(successfully_added_songs) >= max_songs:
+                        break
+                elif not songs_this_iteration:
+                    # No songs extracted in this iteration - Claude might be done or needs guidance
+                    logger.info("ℹ️ No songs extracted in this iteration")
+                    # Add assistant's response to conversation
+                    if accumulated_response:
+                        conversation_messages.append({"role": "assistant", "content": accumulated_response})
+                    # Continue to next iteration
+            
+            # Final message
+            if len(successfully_added_songs) >= max_songs:
+                logger.info(f"✅ Successfully created playlist with {len(successfully_added_songs)} songs")
+                
+                # Ask Claude for a closing summary
+                track_list = "\n".join([f"- \"{song.get('track')}\" by {song.get('artist')}" for song in successfully_added_songs])
+                summary_request = f"""Perfect! The playlist is now complete with {len(successfully_added_songs)} tracks:
+
+{track_list}
+
+Please provide a brief, friendly closing message summarizing the playlist you've created. Keep it to 2-3 sentences maximum."""
+                
+                conversation_messages.append({"role": "user", "content": summary_request})
+                
+                # Signal new bubble for summary
+                yield f"data: {json.dumps({'type': 'new_bubble'})}\n\n"
+                
+                # Get Claude's summary
+                for chunk in service.chat_stream(
+                    messages=conversation_messages,
+                    system=request.system,
+                    on_songs_extracted=None,  # Don't extract songs from summary
+                    already_extracted_songs=already_extracted_songs,
+                    successfully_added_songs=successfully_added_songs
+                ):
+                    if isinstance(chunk, dict):
+                        if chunk.get("type") == "text":
                             content = chunk.get("content", "")
                             yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
                         elif chunk.get("type") == "error":
                             yield f"data: {json.dumps({'type': 'error', 'content': chunk.get('content', 'Unknown error')})}\n\n"
                     else:
                         yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
-                    
-                    # Check for completed tasks in follow-up loop
-                    if pending_tasks:
-                        completed = []
-                        for task in pending_tasks:
-                            if task.done():
-                                completed.append(task)
-                        
-                        for task in completed:
-                            pending_tasks.remove(task)
-                            try:
-                                result = await task
-                                if result["success"]:
-                                    track = result["song"]
-                                    track_data = result.get("track_data", {})
-                                    yield f"data: {json.dumps({'type': 'track_added', 'track': track, 'track_data': track_data})}\n\n"
-                                    logger.info(f"📤 Sent track_added event: {track.get('track')} by {track.get('artist')}")
-                            except Exception as e:
-                                logger.error(f"❌ Task failed: {str(e)}")
-                
-                # Wait for remaining tasks from follow-up loop
-                if pending_tasks:
-                    logger.info(f"⏳ Waiting for {len(pending_tasks)} remaining follow-up task(s)...")
-                    results = await asyncio.gather(*pending_tasks, return_exceptions=True)
-                    for result in results:
-                        if isinstance(result, Exception):
-                            logger.error(f"❌ Task failed: {str(result)}")
-                        elif isinstance(result, dict) and result.get("success"):
-                            track = result["song"]
-                            track_data = result.get("track_data", {})
-                            yield f"data: {json.dumps({'type': 'track_added', 'track': track, 'track_data': track_data})}\n\n"
-                            logger.info(f"📤 Sent track_added event: {track.get('track')} by {track.get('artist')}")
-                    pending_tasks.clear()
+            else:
+                logger.info(f"⚠️ Playlist creation stopped with {len(successfully_added_songs)} songs")
             
             # Send completion event
             yield f"data: {json.dumps({'type': 'done'})}\n\n"

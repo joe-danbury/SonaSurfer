@@ -74,7 +74,7 @@ class ClaudeService:
             
             params = {
                 "q": query,
-                "count": 5
+                "count": 2  # Reduced from 5 to speed up iterative searches
             }
             
             with httpx.Client(timeout=10.0, headers=headers) as client:
@@ -207,6 +207,15 @@ class ClaudeService:
 
 BUILD MODE RULES (STRICTLY ENFORCED):
 
+ITERATIVE WORKFLOW (MANDATORY):
+- Suggest ONE song at a time, then WAIT for system feedback
+- After suggesting a song, the system will tell you if it was found on Spotify or not
+- If successful, the system will confirm: "✅ Added '[track]' by [artist] to the playlist. Continue with another song."
+- If failed, the system will say: "❌ '[track]' by [artist] was not found on Spotify. Try a different song."
+- After receiving feedback, suggest the NEXT song
+- Continue this process until the playlist reaches 10 songs
+- DO NOT suggest multiple songs in one response - suggest ONE, wait for feedback, then suggest the next
+
 WIKIPEDIA DISCOGRAPHY REQUIREMENT (MANDATORY):
 - When the user mentions a specific artist or you need to suggest songs by an artist, you MUST:
   1. Search for the artist's Wikipedia discography page using: "Artist Name discography Wikipedia"
@@ -230,15 +239,18 @@ OUTPUT FORMAT RULES:
 - Each recommendation must be in the exact format:
   "Track Title" — Artist
   (No extra punctuation inside the title unless it's part of the official name.)
+- Suggest ONLY ONE song per response, then wait for feedback
 
 WORKFLOW:
 1. If user mentions a specific artist, search for: "Artist Name discography Wikipedia"
 2. Review the Wikipedia discography page to find appropriate tracks
-3. Only suggest tracks that appear on the official Wikipedia discography page
-4. Use search_web to verify any other tracks that match the user's request
-5. Only after web search confirms real tracks exist, suggest them in the required format
-6. If web search fails or finds nothing, inform the user honestly - do NOT invent tracks
-7. IMPORTANT: Once you have suggested tracks in your response, do NOT mention them again or try to verify them again. Move on to suggesting new tracks or conclude your response. Do not repeat the same track suggestions."""
+3. Suggest ONE track from the Wikipedia discography page in the required format
+4. WAIT for system feedback about whether the track was added successfully
+5. Based on feedback, either:
+   - If successful: suggest the NEXT track
+   - If failed: suggest a DIFFERENT track
+6. Continue until you receive confirmation that 10 tracks have been added
+7. When asked to provide a summary, give a brief, friendly closing message about the completed playlist (2-3 sentences max)"""
             
             # Make the API call with tools
             api_params = {
@@ -321,8 +333,6 @@ WORKFLOW:
                 # If we have enough songs (10+), stop the tool call loop
                 if successfully_added_songs and len(successfully_added_songs) >= 10:
                     logger.info(f"🛑 Stopping tool loop - {len(successfully_added_songs)} track(s) already added to playlist.")
-                    yield {"type": "new_bubble"}
-                    yield {"type": "text", "content": f"\n\nYour playlist now has {len(successfully_added_songs)} tracks! Let me know if you'd like me to add more."}
                     return
                 
                 # Log tool calls
