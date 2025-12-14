@@ -274,6 +274,7 @@ function App() {
         let currentResponseId = responseId; // Track current bubble's responseId
         let firstBubbleCreated = false; // Track if we've created the first bubble
         let isInProcessingPhase = false; // Track if we're past the first bubble (local, no stale closure)
+        let bubbleCount = 0; // Track number of new_bubble events (0 = initial message, 1 = start loader, 2+ = hide loader for summary)
 
         while (!streamComplete) {
           const { done, value } = await reader.read();
@@ -297,15 +298,20 @@ function App() {
                 
                 if (data.type === 'new_bubble') {
                   // Create a new message bubble for the next response segment
+                  bubbleCount++;
                   const newResponseId = Date.now() + Math.random();
                   currentResponseId = newResponseId;
                   accumulatedText = ''; // Reset for new bubble
                   firstBubbleCreated = false; // Reset so next chunk creates the bubble
                   isInProcessingPhase = true; // Mark that we're past the first bubble
                   
-                  // After the first bubble, switch to processing phase (show loader)
-                  // Mark subsequent bubbles as processing bubbles (hidden until done)
-                  setProcessingPhase('processing');
+                  // After the first new_bubble (bubbleCount === 1), switch to processing phase (show loader)
+                  // When summary starts (bubbleCount === 2), hide loader
+                  if (bubbleCount === 1) {
+                    setProcessingPhase('processing'); // Show loader during playlist building
+                  } else if (bubbleCount >= 2) {
+                    setProcessingPhase('idle'); // Hide loader when summary starts
+                  }
                 } else if (data.type === 'chunk') {
                   accumulatedText += data.content;
                   
@@ -618,8 +624,8 @@ function App() {
                   </div>
                 </div>
               ))}
-              {/* Show loading indicator with cycling phrases */}
-              {isLoadingResponse && <LoadingIndicator />}
+              {/* Show loading indicator after first message, while building playlist */}
+              {processingPhase === 'processing' && <LoadingIndicator />}
             </>
           )}
         </div>
