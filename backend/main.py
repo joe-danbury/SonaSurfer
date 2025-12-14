@@ -8,6 +8,7 @@ import secrets
 import os
 import logging
 import json
+import asyncio
 
 # Configure logging
 logging.basicConfig(
@@ -217,58 +218,71 @@ async def chat(
                 else:
                     access_token = authorization
             
-            # Callback function to handle extracted songs (called one-by-one)
+            # Track pending async tasks for parallel processing
+            pending_tasks = []
+            
+            async def process_song_async(song: Dict[str, str]):
+                """Process a single song asynchronously"""
+                try:
+                    spotify_service = get_spotify_service()
+                    
+                    # Search for track on Spotify (blocking, but we'll run multiple in parallel)
+                    track_uri = await asyncio.to_thread(
+                        spotify_service.search_track,
+                        access_token=access_token,
+                        track_name=song.get("track", ""),
+                        artist_name=song.get("artist")
+                    )
+                    
+                    if track_uri:
+                        # Add track to playlist
+                        await asyncio.to_thread(
+                            spotify_service.add_tracks_to_playlist,
+                            access_token=access_token,
+                            playlist_id=playlist_id,
+                            track_uris=[track_uri]
+                        )
+                        logger.info(f"✅ Added track to playlist: {song.get('track')} by {song.get('artist')}")
+                        
+                        # Mark as extracted and added
+                        track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
+                        already_extracted_songs.add(track_key)
+                        successfully_added_songs.append(song)
+                        
+                        return {"success": True, "song": song}
+                    else:
+                        # Track not found
+                        failed_songs.append(song)
+                        track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
+                        already_extracted_songs.add(track_key)
+                        logger.warning(f"❌ Track not found on Spotify: {song.get('track')} by {song.get('artist')}")
+                        return {"success": False, "song": song}
+                        
+                except Exception as e:
+                    logger.error(f"❌ Failed to add track to playlist: {str(e)}")
+                    failed_songs.append(song)
+                    track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
+                    already_extracted_songs.add(track_key)
+                    return {"success": False, "song": song}
+            
+            # Callback function to handle extracted songs (now creates async tasks)
             def on_songs_extracted(songs: List[Dict[str, str]]):
-                """Callback when songs are extracted from Claude's response (one song at a time)"""
+                """Callback when songs are extracted from Claude's response"""
                 if not songs or len(songs) == 0:
                     return
                 
-                song = songs[0]  # Should only be one song at a time now
-                extracted_songs.append(song)
-                
-                # Validate and add to playlist immediately if playlist_id and access_token are provided
-                if playlist_id and access_token:
-                    try:
-                        spotify_service = get_spotify_service()
-                        
-                        track_uri = spotify_service.search_track(
-                            access_token=access_token,
-                            track_name=song.get("track", ""),
-                            artist_name=song.get("artist")
-                        )
-                        
-                        if track_uri:
-                            # Add track immediately (one at a time)
-                            spotify_service.add_tracks_to_playlist(
-                                access_token=access_token,
-                                playlist_id=playlist_id,
-                                track_uris=[track_uri]
-                            )
-                            logger.info(f"✅ Added track to playlist: {song.get('track')} by {song.get('artist')}")
-                            # Mark as already extracted so we don't extract it again
-                            track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
-                            already_extracted_songs.add(track_key)
-                            # Add to successfully added songs list for feedback to Claude
-                            successfully_added_songs.append(song)
-                        else:
-                            # Track validation failed - add to failed list
-                            failed_songs.append(song)
-                            # Mark as already extracted so we don't try it again
-                            track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
-                            already_extracted_songs.add(track_key)
-                            logger.warning(f"❌ Track not found on Spotify: {song.get('track')} by {song.get('artist')}")
-                    except Exception as e:
-                        logger.error(f"❌ Failed to add track to playlist: {str(e)}")
-                        failed_songs.append(song)
-                        # Mark as already extracted so we don't try it again
-                        track_key = (song.get("track", "").lower().strip(), song.get("artist", "").lower().strip())
-                        already_extracted_songs.add(track_key)
-                else:
-                    logger.info(f"🎵 Song extracted (no playlist context): {song.get('track')} by {song.get('artist')}")
+                for song in songs:
+                    extracted_songs.append(song)
+                    
+                    # If we have playlist context, create async task for parallel processing
+                    if playlist_id and access_token:
+                        task = asyncio.create_task(process_song_async(song))
+                        pending_tasks.append(task)
+                    else:
+                        logger.info(f"🎵 Song extracted (no playlist context): {song.get('track')} by {song.get('artist')}")
             
             # Stream response from Claude (with extraction callback)
             accumulated_response = ""
-            last_track_count = 0  # Track how many songs have been added
             
             for chunk in service.chat_stream(
                 messages=messages, 
@@ -286,28 +300,45 @@ async def chat(
                         content = chunk.get("content", "")
                         accumulated_response += content
                         yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
-                    elif chunk.get("type") == "track_added":
-                        # Track was added - forward to frontend immediately
-                        track = chunk.get("track", {})
-                        yield f"data: {json.dumps({'type': 'track_added', 'track': track})}\n\n"
-                        logger.info(f"📤 Forwarded track_added event: {track.get('track')} by {track.get('artist')}")
-                        last_track_count = len(successfully_added_songs)  # Keep in sync
                     elif chunk.get("type") == "error":
                         yield f"data: {json.dumps({'type': 'error', 'content': chunk.get('content', 'Unknown error')})}\n\n"
                 else:
                     # Fallback for plain text chunks
                     accumulated_response += chunk
                     yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                
+                # Check for completed tasks (non-blocking) and yield events as they complete
+                if pending_tasks:
+                    completed = []
+                    for task in pending_tasks:
+                        if task.done():
+                            completed.append(task)
+                    
+                    for task in completed:
+                        pending_tasks.remove(task)
+                        try:
+                            result = await task
+                            if result["success"]:
+                                # Track was successfully added - send event immediately
+                                track = result["song"]
+                                yield f"data: {json.dumps({'type': 'track_added', 'track': track})}\n\n"
+                                logger.info(f"📤 Sent track_added event: {track.get('track')} by {track.get('artist')}")
+                        except Exception as e:
+                            logger.error(f"❌ Task failed: {str(e)}")
             
-            # IMPORTANT: Check for any tracks added during the final iteration
-            # (tracks are added when generator resumes, so we need to check after loop ends)
-            current_track_count = len(successfully_added_songs)
-            if current_track_count > last_track_count:
-                for i in range(last_track_count, current_track_count):
-                    track = successfully_added_songs[i]
-                    yield f"data: {json.dumps({'type': 'track_added', 'track': track})}\n\n"
-                    logger.info(f"📤 Sent track_added event: {track.get('track')} by {track.get('artist')}")
-                last_track_count = current_track_count
+            # Wait for all remaining pending tasks to complete
+            if pending_tasks:
+                logger.info(f"⏳ Waiting for {len(pending_tasks)} remaining task(s) to complete...")
+                results = await asyncio.gather(*pending_tasks, return_exceptions=True)
+                for result in results:
+                    if isinstance(result, Exception):
+                        logger.error(f"❌ Task failed: {str(result)}")
+                    elif isinstance(result, dict) and result.get("success"):
+                        # Track was successfully added - send event
+                        track = result["song"]
+                        yield f"data: {json.dumps({'type': 'track_added', 'track': track})}\n\n"
+                        logger.info(f"📤 Sent track_added event: {track.get('track')} by {track.get('artist')}")
+                pending_tasks.clear()
             
             # If there are failed songs, make a follow-up call to Claude to find alternatives
             if failed_songs and playlist_id and access_token:
@@ -344,25 +375,41 @@ IMPORTANT: Use search_web to find verified alternative tracks that match the sam
                         elif chunk.get("type") == "text":
                             content = chunk.get("content", "")
                             yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
-                        elif chunk.get("type") == "track_added":
-                            # Track was added - forward to frontend immediately
-                            track = chunk.get("track", {})
-                            yield f"data: {json.dumps({'type': 'track_added', 'track': track})}\n\n"
-                            logger.info(f"📤 Forwarded track_added event: {track.get('track')} by {track.get('artist')}")
-                            last_track_count = len(successfully_added_songs)
                         elif chunk.get("type") == "error":
                             yield f"data: {json.dumps({'type': 'error', 'content': chunk.get('content', 'Unknown error')})}\n\n"
                     else:
                         yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                    
+                    # Check for completed tasks in follow-up loop
+                    if pending_tasks:
+                        completed = []
+                        for task in pending_tasks:
+                            if task.done():
+                                completed.append(task)
+                        
+                        for task in completed:
+                            pending_tasks.remove(task)
+                            try:
+                                result = await task
+                                if result["success"]:
+                                    track = result["song"]
+                                    yield f"data: {json.dumps({'type': 'track_added', 'track': track})}\n\n"
+                                    logger.info(f"📤 Sent track_added event: {track.get('track')} by {track.get('artist')}")
+                            except Exception as e:
+                                logger.error(f"❌ Task failed: {str(e)}")
                 
-                # Check for tracks added during final iteration of follow-up loop
-                current_track_count = len(successfully_added_songs)
-                if current_track_count > last_track_count:
-                    for i in range(last_track_count, current_track_count):
-                        track = successfully_added_songs[i]
-                        yield f"data: {json.dumps({'type': 'track_added', 'track': track})}\n\n"
-                        logger.info(f"📤 Sent track_added event: {track.get('track')} by {track.get('artist')}")
-                    last_track_count = current_track_count
+                # Wait for remaining tasks from follow-up loop
+                if pending_tasks:
+                    logger.info(f"⏳ Waiting for {len(pending_tasks)} remaining follow-up task(s)...")
+                    results = await asyncio.gather(*pending_tasks, return_exceptions=True)
+                    for result in results:
+                        if isinstance(result, Exception):
+                            logger.error(f"❌ Task failed: {str(result)}")
+                        elif isinstance(result, dict) and result.get("success"):
+                            track = result["song"]
+                            yield f"data: {json.dumps({'type': 'track_added', 'track': track})}\n\n"
+                            logger.info(f"📤 Sent track_added event: {track.get('track')} by {track.get('artist')}")
+                    pending_tasks.clear()
             
             # Send completion event
             yield f"data: {json.dumps({'type': 'done'})}\n\n"

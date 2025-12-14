@@ -334,19 +334,31 @@ function App() {
                   setIsLoadingResponse(false);
                   return;
                 } else if (data.type === 'track_added') {
-                  // A track was successfully added to the playlist - refresh to show it
+                  // A track was successfully added - update UI immediately
                   console.log('🎵 Track added:', data.track);
-                  if (playlist?.id && accessToken) {
-                    // Refresh playlist to show the new track
-                    fetch(`${API_BASE_URL}/playlists/${playlist.id}`, {
-                      headers: { 'Authorization': `Bearer ${accessToken}` }
-                    })
-                      .then(res => res.ok ? res.json() : null)
-                      .then(playlistData => {
-                        if (playlistData) setPlaylist(playlistData);
-                      })
-                      .catch(err => console.error('Failed to refresh playlist:', err));
-                  }
+                  const trackInfo = data.track;
+                  
+                  // Create a minimal track item for immediate display
+                  const newTrackItem = {
+                    track: {
+                      name: trackInfo.track,
+                      artists: [{ name: trackInfo.artist }],
+                      album: { images: [] } // Placeholder, will get full data at end
+                    }
+                  };
+                  
+                  // Add to playlist state immediately for instant UI update
+                  setPlaylist(prev => {
+                    if (!prev) return prev;
+                    const currentItems = prev.tracks?.items || [];
+                    return {
+                      ...prev,
+                      tracks: {
+                        ...prev.tracks,
+                        items: [...currentItems, newTrackItem]
+                      }
+                    };
+                  });
                 } else if (data.type === 'done') {
                   // Stream complete - reset processing phase and mark last bubble as final (visible)
                   setProcessingPhase('idle');
