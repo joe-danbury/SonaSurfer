@@ -303,9 +303,19 @@ async def chat(
                             already_extracted_songs.add(track_key)
                             successfully_added_songs.append(song)
                             
+                            # Fetch updated playlist details (including cover art)
+                            updated_playlist = spotify_service.get_playlist(
+                                access_token=access_token,
+                                playlist_id=playlist_id
+                            )
+                            
                             # Send track_added event to frontend
                             yield f"data: {json.dumps({'type': 'track_added', 'track': song, 'track_data': track_data})}\n\n"
                             logger.info(f"📤 Sent track_added event: {song.get('track')} by {song.get('artist')}")
+                            
+                            # Send playlist update with new cover art
+                            yield f"data: {json.dumps({'type': 'playlist_updated', 'playlist': updated_playlist})}\n\n"
+                            logger.info(f"📤 Sent playlist_updated event with cover art")
                             
                             # Inject success feedback into conversation
                             feedback = f"✅ Added '{song.get('track')}' by {song.get('artist')} to the playlist (Track {len(successfully_added_songs)}/{max_songs}). Continue with another song."

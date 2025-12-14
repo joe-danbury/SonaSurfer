@@ -358,6 +358,20 @@ function App() {
                       }
                     };
                   });
+                } else if (data.type === 'playlist_updated') {
+                  // Playlist metadata updated (cover art, etc.)
+                  console.log('📸 Playlist updated with new cover art:', data.playlist);
+                  
+                  // Update playlist with new cover art while preserving current track list
+                  setPlaylist(prev => {
+                    if (!prev) return data.playlist;
+                    // Keep current tracks (which are already up to date from track_added events)
+                    // But update the cover art and other metadata
+                    return {
+                      ...data.playlist,
+                      tracks: prev.tracks // Preserve the track list we've been building
+                    };
+                  });
                 } else if (data.type === 'done') {
                   // Stream complete - reset processing phase and mark last bubble as final (visible)
                   setProcessingPhase('idle');
