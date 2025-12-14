@@ -90,9 +90,9 @@ class SpotifyService:
         except Exception as e:
             raise Exception(f"Failed to create playlist: {str(e)}")
     
-    def search_track(self, access_token: str, track_name: str, artist_name: Optional[str] = None) -> Optional[str]:
+    def search_track(self, access_token: str, track_name: str, artist_name: Optional[str] = None) -> Optional[Dict]:
         """
-        Search for a track on Spotify and return its URI.
+        Search for a track on Spotify and return its data.
         Prioritizes exact matches when artist_name is provided.
         
         Args:
@@ -101,7 +101,8 @@ class SpotifyService:
             artist_name: Optional artist name to improve search accuracy
         
         Returns:
-            Track URI (spotify:track:xxx) if found, None otherwise
+            Dictionary with 'uri' and 'track_data' if found, None otherwise
+            Example: {"uri": "spotify:track:xxx", "track_data": {...full Spotify track object...}}
         """
         try:
             spotify = self.get_spotify_client(access_token)
@@ -144,7 +145,7 @@ class SpotifyService:
                         track_name_match == track_name_normalized):
                         track_uri = track['uri']
                         logger.info(f"✅ Found match (exact artist, flexible track): {track['name']} by {track['artists'][0]['name']} - URI: {track_uri}")
-                        return track_uri
+                        return {"uri": track_uri, "track_data": track}
                 
                 # No match found with exact artist requirement
                 logger.warning(f"⚠️ No track found with exact artist match for '{track_name}' by '{artist_name}'")
@@ -155,7 +156,7 @@ class SpotifyService:
                 track = tracks[0]
                 track_uri = track['uri']
                 logger.info(f"✅ Found track (no artist specified): {track['name']} by {track['artists'][0]['name']} - URI: {track_uri}")
-                return track_uri
+                return {"uri": track_uri, "track_data": track}
             
             return None
                 

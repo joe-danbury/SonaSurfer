@@ -334,16 +334,15 @@ function App() {
                   setIsLoadingResponse(false);
                   return;
                 } else if (data.type === 'track_added') {
-                  // A track was successfully added - update UI immediately
-                  console.log('🎵 Track added:', data.track);
-                  const trackInfo = data.track;
+                  // A track was successfully added - update UI immediately with full data
+                  console.log('🎵 Track added:', data.track, data.track_data);
                   
-                  // Create a minimal track item for immediate display
+                  // Use the full Spotify track data from the backend
                   const newTrackItem = {
-                    track: {
-                      name: trackInfo.track,
-                      artists: [{ name: trackInfo.artist }],
-                      album: { images: [] } // Placeholder, will get full data at end
+                    track: data.track_data || {
+                      name: data.track.track,
+                      artists: [{ name: data.track.artist }],
+                      album: { images: [] }
                     }
                   };
                   

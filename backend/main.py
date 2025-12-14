@@ -226,15 +226,18 @@ async def chat(
                 try:
                     spotify_service = get_spotify_service()
                     
-                    # Search for track on Spotify (blocking, but we'll run multiple in parallel)
-                    track_uri = await asyncio.to_thread(
+                    # Search for track on Spotify (returns URI + full track data)
+                    track_result = await asyncio.to_thread(
                         spotify_service.search_track,
                         access_token=access_token,
                         track_name=song.get("track", ""),
                         artist_name=song.get("artist")
                     )
                     
-                    if track_uri:
+                    if track_result:
+                        track_uri = track_result["uri"]
+                        track_data = track_result["track_data"]
+                        
                         # Add track to playlist
                         await asyncio.to_thread(
                             spotify_service.add_tracks_to_playlist,
@@ -249,7 +252,7 @@ async def chat(
                         already_extracted_songs.add(track_key)
                         successfully_added_songs.append(song)
                         
-                        return {"success": True, "song": song}
+                        return {"success": True, "song": song, "track_data": track_data}
                     else:
                         # Track not found
                         failed_songs.append(song)
@@ -319,9 +322,10 @@ async def chat(
                         try:
                             result = await task
                             if result["success"]:
-                                # Track was successfully added - send event immediately
+                                # Track was successfully added - send event with full track data
                                 track = result["song"]
-                                yield f"data: {json.dumps({'type': 'track_added', 'track': track})}\n\n"
+                                track_data = result.get("track_data", {})
+                                yield f"data: {json.dumps({'type': 'track_added', 'track': track, 'track_data': track_data})}\n\n"
                                 logger.info(f"📤 Sent track_added event: {track.get('track')} by {track.get('artist')}")
                         except Exception as e:
                             logger.error(f"❌ Task failed: {str(e)}")
@@ -334,9 +338,10 @@ async def chat(
                     if isinstance(result, Exception):
                         logger.error(f"❌ Task failed: {str(result)}")
                     elif isinstance(result, dict) and result.get("success"):
-                        # Track was successfully added - send event
+                        # Track was successfully added - send event with full track data
                         track = result["song"]
-                        yield f"data: {json.dumps({'type': 'track_added', 'track': track})}\n\n"
+                        track_data = result.get("track_data", {})
+                        yield f"data: {json.dumps({'type': 'track_added', 'track': track, 'track_data': track_data})}\n\n"
                         logger.info(f"📤 Sent track_added event: {track.get('track')} by {track.get('artist')}")
                 pending_tasks.clear()
             
@@ -393,7 +398,8 @@ IMPORTANT: Use search_web to find verified alternative tracks that match the sam
                                 result = await task
                                 if result["success"]:
                                     track = result["song"]
-                                    yield f"data: {json.dumps({'type': 'track_added', 'track': track})}\n\n"
+                                    track_data = result.get("track_data", {})
+                                    yield f"data: {json.dumps({'type': 'track_added', 'track': track, 'track_data': track_data})}\n\n"
                                     logger.info(f"📤 Sent track_added event: {track.get('track')} by {track.get('artist')}")
                             except Exception as e:
                                 logger.error(f"❌ Task failed: {str(e)}")
@@ -407,7 +413,8 @@ IMPORTANT: Use search_web to find verified alternative tracks that match the sam
                             logger.error(f"❌ Task failed: {str(result)}")
                         elif isinstance(result, dict) and result.get("success"):
                             track = result["song"]
-                            yield f"data: {json.dumps({'type': 'track_added', 'track': track})}\n\n"
+                            track_data = result.get("track_data", {})
+                            yield f"data: {json.dumps({'type': 'track_added', 'track': track, 'track_data': track_data})}\n\n"
                             logger.info(f"📤 Sent track_added event: {track.get('track')} by {track.get('artist')}")
                     pending_tasks.clear()
             
