@@ -64,9 +64,9 @@ function LoadingIndicator() {
   
   return (
     <div className="flex justify-start">
-      <div className="bg-white/20 text-white rounded-lg px-4 py-2">
+      <div className="bg-white/20 text-white rounded-lg px-4 py-2" style={{ minWidth: '250px' }}>
         <div className="flex items-center gap-3">
-          <span className="text-white/90 inline-block" style={{ minWidth: '168px' }}>{phrases[phraseIndex]}</span>
+          <span className="text-white/90">{phrases[phraseIndex]}</span>
           <div className="flex items-center gap-1">
             <div className="w-2 h-2 bg-white rounded-full animate-bounce"></div>
             <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
