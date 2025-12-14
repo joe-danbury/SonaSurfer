@@ -36,3 +36,12 @@
     transform: rotate(360deg);
   }
 }
+
+@keyframes marquee-scroll {
+  0%, 15% {
+    transform: translateX(0);
+  }
+  85%, 100% {
+    transform: translateX(var(--scroll-distance, -100px));
+  }
+}

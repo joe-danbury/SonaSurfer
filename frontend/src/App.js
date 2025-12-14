@@ -1,7 +1,59 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 
 const API_BASE_URL = 'http://localhost:8000';
+
+// Scrolling text component for long track names/artists
+function ScrollingText({ children, className = '' }) {
+  const containerRef = useRef(null);
+  const textRef = useRef(null);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const [scrollDistance, setScrollDistance] = useState(0);
+
+  useEffect(() => {
+    const checkOverflow = () => {
+      if (containerRef.current && textRef.current) {
+        const containerWidth = containerRef.current.offsetWidth;
+        const textWidth = textRef.current.scrollWidth;
+        const overflow = textWidth > containerWidth;
+        setIsOverflowing(overflow);
+        if (overflow) {
+          // Calculate how far we need to scroll (the amount of overflow)
+          setScrollDistance(textWidth - containerWidth);
+        }
+      }
+    };
+
+    checkOverflow();
+    // Add a small delay to ensure DOM is fully rendered
+    const timer = setTimeout(checkOverflow, 100);
+    window.addEventListener('resize', checkOverflow);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', checkOverflow);
+    };
+  }, [children]);
+
+  return (
+    <div ref={containerRef} className={`overflow-hidden ${className}`}>
+      <div
+        ref={textRef}
+        className="whitespace-nowrap"
+        style={
+          isOverflowing
+            ? {
+                display: 'inline-block',
+                animation: `marquee-scroll 8s linear infinite`,
+                '--scroll-distance': `-${scrollDistance}px`,
+              }
+            : {}
+        }
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
 
 // Skeleton UI for playlist while loading
 function PlaylistSkeleton() {
@@ -691,8 +743,12 @@ function App() {
                           <div className="w-10 h-10 bg-gray-300 rounded flex-shrink-0"></div>
                         )}
                         <div className="flex-1 min-w-0">
-                          <p className="text-gray-800 text-sm font-medium">{item.track.name}</p>
-                          <p className="text-gray-500 text-xs">{item.track.artists.map(a => a.name).join(', ')}</p>
+                          <ScrollingText className="text-gray-800 text-sm font-medium mb-1">
+                            {item.track.name}
+                          </ScrollingText>
+                          <ScrollingText className="text-gray-500 text-xs">
+                            {item.track.artists.map(a => a.name).join(', ')}
+                          </ScrollingText>
                         </div>
                       </div>
                     ))
