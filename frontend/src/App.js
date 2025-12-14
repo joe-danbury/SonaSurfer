@@ -657,7 +657,13 @@ function App() {
                 <div className="space-y-1">
                   {playlist?.tracks?.items && playlist.tracks.items.length > 0 ? (
                     playlist.tracks.items.map((item, index) => (
-                      <div key={index} className="flex items-center gap-3 p-3 rounded hover:bg-gray-100 transition-colors">
+                      <motion.div 
+                        key={item.track?.id || index}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4, ease: "easeOut" }}
+                        className="flex items-center gap-3 p-3 rounded hover:bg-gray-100 transition-colors"
+                      >
                         {item.track?.album?.images?.[2]?.url ? (
                           <img 
                             src={item.track.album.images[2].url} 
@@ -675,7 +681,7 @@ function App() {
                             {item.track.artists.map(a => a.name).join(', ')}
                           </ScrollingText>
                         </div>
-                      </div>
+                      </motion.div>
                     ))
                   ) : (
                     // Skeleton tracks while waiting for tracks to be added
