@@ -305,9 +305,20 @@ WORKFLOW:
                                     already_extracted_songs.add(track_key)
                                 
                                 logger.info(f"🎵 Extracted {len(new_songs)} new song(s) from Claude response")
+                                
+                                # Track count before callback to detect new additions
+                                count_before = len(successfully_added_songs) if successfully_added_songs else 0
+                                
                                 # Call callback with new songs one-by-one for immediate validation
                                 for song in new_songs:
                                     on_songs_extracted([song])  # Pass as list with single song
+                                    
+                                    # Yield track_added event immediately if song was successfully added
+                                    if successfully_added_songs and len(successfully_added_songs) > count_before:
+                                        added_song = successfully_added_songs[-1]
+                                        yield {"type": "track_added", "track": added_song}
+                                        logger.info(f"📤 Yielded track_added: {added_song.get('track')} by {added_song.get('artist')}")
+                                        count_before = len(successfully_added_songs)
                         except Exception as e:
                             logger.warning(f"⚠️ Failed to extract songs: {str(e)}")
                 

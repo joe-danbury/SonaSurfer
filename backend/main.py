@@ -286,22 +286,18 @@ async def chat(
                         content = chunk.get("content", "")
                         accumulated_response += content
                         yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
+                    elif chunk.get("type") == "track_added":
+                        # Track was added - forward to frontend immediately
+                        track = chunk.get("track", {})
+                        yield f"data: {json.dumps({'type': 'track_added', 'track': track})}\n\n"
+                        logger.info(f"📤 Forwarded track_added event: {track.get('track')} by {track.get('artist')}")
+                        last_track_count = len(successfully_added_songs)  # Keep in sync
                     elif chunk.get("type") == "error":
                         yield f"data: {json.dumps({'type': 'error', 'content': chunk.get('content', 'Unknown error')})}\n\n"
                 else:
                     # Fallback for plain text chunks
                     accumulated_response += chunk
                     yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
-                
-                # Check if new tracks were added and notify frontend
-                current_track_count = len(successfully_added_songs)
-                if current_track_count > last_track_count:
-                    # Yield track_added events for each new track
-                    for i in range(last_track_count, current_track_count):
-                        track = successfully_added_songs[i]
-                        yield f"data: {json.dumps({'type': 'track_added', 'track': track})}\n\n"
-                        logger.info(f"📤 Sent track_added event: {track.get('track')} by {track.get('artist')}")
-                    last_track_count = current_track_count
             
             # IMPORTANT: Check for any tracks added during the final iteration
             # (tracks are added when generator resumes, so we need to check after loop ends)
@@ -348,19 +344,16 @@ IMPORTANT: Use search_web to find verified alternative tracks that match the sam
                         elif chunk.get("type") == "text":
                             content = chunk.get("content", "")
                             yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
+                        elif chunk.get("type") == "track_added":
+                            # Track was added - forward to frontend immediately
+                            track = chunk.get("track", {})
+                            yield f"data: {json.dumps({'type': 'track_added', 'track': track})}\n\n"
+                            logger.info(f"📤 Forwarded track_added event: {track.get('track')} by {track.get('artist')}")
+                            last_track_count = len(successfully_added_songs)
                         elif chunk.get("type") == "error":
                             yield f"data: {json.dumps({'type': 'error', 'content': chunk.get('content', 'Unknown error')})}\n\n"
                     else:
                         yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
-                    
-                    # Check if new tracks were added and notify frontend
-                    current_track_count = len(successfully_added_songs)
-                    if current_track_count > last_track_count:
-                        for i in range(last_track_count, current_track_count):
-                            track = successfully_added_songs[i]
-                            yield f"data: {json.dumps({'type': 'track_added', 'track': track})}\n\n"
-                            logger.info(f"📤 Sent track_added event: {track.get('track')} by {track.get('artist')}")
-                        last_track_count = current_track_count
                 
                 # Check for tracks added during final iteration of follow-up loop
                 current_track_count = len(successfully_added_songs)
