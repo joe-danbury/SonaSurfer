@@ -616,7 +616,7 @@ function App() {
           <div className="p-8 flex gap-8">
             {/* Left side - Cover and Tracklist */}
             <div className="flex-shrink-0 flex flex-col">
-              {/* Playlist Cover */}
+              {/* Playlist Cover - skeleton until we have an image */}
               <div className="mb-6 flex justify-center">
                 {playlist?.images?.[0]?.url ? (
                   <img 
@@ -625,23 +625,11 @@ function App() {
                     className="w-64 h-64 rounded-lg shadow-lg object-cover"
                   />
                 ) : (
-                  <div className="w-64 h-64 bg-gray-200 rounded-lg shadow-lg flex items-center justify-center">
-                    <svg
-                      className="w-24 h-24 text-gray-400"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </div>
+                  <div className="w-64 h-64 bg-gray-200 rounded-lg shadow-lg animate-pulse"></div>
                 )}
               </div>
 
-              {/* Tracklist */}
+              {/* Tracklist - skeleton until we have tracks */}
               <div className="space-y-2">
                 <h3 className="text-lg font-semibold text-gray-700 mb-4">Tracks</h3>
                 <div className="space-y-1">
@@ -664,12 +652,17 @@ function App() {
                       </div>
                     ))
                   ) : (
-                    <div className="flex items-center gap-3 p-3 rounded hover:bg-gray-100 transition-colors">
-                      <div className="w-10 h-10 bg-gray-300 rounded flex-shrink-0"></div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-gray-400 text-sm">No tracks yet</p>
-                        <p className="text-gray-500 text-xs">Tracks will appear here</p>
-                      </div>
+                    // Skeleton tracks while waiting for tracks to be added
+                    <div className="animate-pulse space-y-1">
+                      {[1, 2, 3, 4, 5].map((i) => (
+                        <div key={i} className="flex items-center gap-3 p-3">
+                          <div className="w-10 h-10 bg-gray-200 rounded flex-shrink-0"></div>
+                          <div className="flex-1">
+                            <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                            <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -678,18 +671,23 @@ function App() {
 
             {/* Right side - Playlist Name and Description */}
             <div className="flex-1 flex flex-col">
-              {/* Playlist Name */}
+              {/* Playlist Name - always show real name */}
               <div className="mb-4">
                 <h2 className="text-3xl font-bold text-gray-800">
                   {playlist?.name || 'My Playlist'}
                 </h2>
               </div>
 
-              {/* Description */}
+              {/* Description - skeleton until we have a description */}
               <div className="mb-6">
-                <p className="text-gray-500 text-sm">
-                  {playlist?.description || 'Playlist description will appear here...'}
-                </p>
+                {playlist?.description ? (
+                  <p className="text-gray-500 text-sm">{playlist.description}</p>
+                ) : (
+                  <div className="animate-pulse">
+                    <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
+                    <div className="h-4 bg-gray-200 rounded w-4/5"></div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
