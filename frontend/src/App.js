@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -44,7 +45,7 @@ function PlaylistSkeleton() {
   );
 }
 
-// Simple loading indicator with cycling phrases and bouncing dots
+// Simple loading indicator with slot machine rolling text
 function LoadingIndicator() {
   const phrases = [
     "Exploring the vibes",
@@ -62,16 +63,29 @@ function LoadingIndicator() {
     return () => clearInterval(interval);
   }, [phrases.length]);
   
+  const currentPhrase = phrases[phraseIndex];
+  
   return (
     <div className="flex justify-start">
       <div className="bg-white/20 text-white rounded-lg px-4 py-2" style={{ minWidth: '250px' }}>
-        <div className="flex items-center gap-3">
-          <span className="text-white/90">{phrases[phraseIndex]}</span>
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 bg-white rounded-full animate-bounce"></div>
-            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-          </div>
+        <div className="relative overflow-hidden" style={{ height: '28px' }}>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={currentPhrase}
+              className="flex items-center gap-3 absolute inset-0"
+              initial={{ y: 28, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -28, opacity: 0 }}
+              transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <span className="text-white/90">{currentPhrase}</span>
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 bg-white rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+              </div>
+            </motion.div>
+          </AnimatePresence>
         </div>
       </div>
     </div>
