@@ -3,6 +3,8 @@
 SonaSurfer is a full-stack app that turns natural language music requests into curated Spotify playlists.
 It combines a React frontend, a FastAPI backend, Spotify OAuth, and LLM-assisted song extraction and validation.
 
+[Demo video of SonaSurfer here](https://www.linkedin.com/posts/joe-danbury_just-wanted-to-share-something-ive-been-ugcPost-7408835963982073856--i1X?utm_source=share&utm_medium=member_desktop&rcm=ACoAADTzXXcBbkpBOLOOkepbLXoAylOly9m3vJo)
+
 ## Why this project is interesting
 
 - End-to-end product workflow from auth to playlist creation
